@@ -45,7 +45,13 @@ copy .env.example .env
 
 3. Import schema from `email_marketing_complete.sql` into your Supabase Postgres database (SQL Editor).
 
-4. Start in development mode:
+4. Run designer migration for drag-drop template support:
+
+```bash
+psql -f src/scripts/sql/20260330_add_template_designer_tables.sql
+```
+
+5. Start in development mode:
 
 ```bash
 npm run dev
@@ -73,9 +79,26 @@ Then update `users.password` with the generated hash.
 - `POST /auth/login`
 - `GET /auth/me`
 - `GET/POST/PATCH/DELETE /contacts`
+- `POST /contacts/import` (multipart file field: `file`, supports `.csv`/`.xlsx`)
+- `GET /contacts/export?format=csv|xlsx`
+- `GET/POST /contacts/fields`
+- `PATCH/DELETE /contacts/fields/:fieldId`
+- `GET/PUT /contacts/:id/fields`
 - `GET/POST /contacts/tags`
 - `PUT /contacts/:id/tags`
 - `GET/POST/PATCH/DELETE /templates`
+- `GET /templates/:id/designer`
+- `PUT /templates/:id/designer`
+- `POST /templates/:id/designer/publish`
+- `GET /templates/:id/designer/versions`
+- `GET /templates/:id/designer/versions/:versionId`
+- `POST /templates/:id/designer/versions/:versionId/restore`
+
+Designer notes:
+
+- `layout` is the source of truth for drag-drop blocks/components.
+- Backend now auto-renders `renderedHtml` and `renderedText` from `layout` if these fields are omitted.
+- You can still send `renderedHtml` / `renderedText` explicitly to override auto-render output.
 - `GET/POST/PATCH/DELETE /email-accounts`
 - `POST /email-accounts/:id/default`
 - `GET/POST /campaigns`
