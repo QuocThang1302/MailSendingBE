@@ -318,7 +318,7 @@ const startCampaign = async (userId, campaignId) => {
     return null;
   }
 
-  if (!["draft", "scheduled", "paused"].includes(campaign.status)) {
+  if (!["draft", "scheduled", "paused", "queued"].includes(campaign.status)) {
     throw new Error("INVALID_CAMPAIGN_STATUS");
   }
 
@@ -410,6 +410,183 @@ const pauseCampaign = async (userId, campaignId) => {
   return data || null;
 };
 
+const acquireWorkerLock = async (lockKey, ownerId, ttlSeconds) => {
+  const nowIso = new Date().toISOString();
+  const expiresAtIso = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+
+  const { error: cleanupError } = await supabase
+    .from("worker_locks")
+    .delete()
+    .eq("lock_key", lockKey)
+    .lt("expires_at", nowIso);
+  throwIfError(cleanupError);
+
+  const { data, error } = await supabase
+    .from("worker_locks")
+    .insert({
+      lock_key: lockKey,
+      owner_id: ownerId,
+      expires_at: expiresAtIso,
+      updated_at: nowIso,
+    })
+    .select("lock_key")
+    .maybeSingle();
+
+  if (error) {
+    if (error.message && error.message.includes("duplicate key value")) {
+      return false;
+    }
+    throw new Error(error.message);
+  }
+
+  return !!data;
+};
+
+const releaseWorkerLock = async (lockKey, ownerId) => {
+  const { error } = await supabase
+    .from("worker_locks")
+    .delete()
+    .eq("lock_key", lockKey)
+    .eq("owner_id", ownerId);
+  throwIfError(error);
+};
+
+const listDueScheduledCampaigns = async (limit) => {
+  const nowIso = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("id, user_id, scheduled_time")
+    .eq("status", "scheduled")
+    .lte("scheduled_time", nowIso)
+    .order("scheduled_time", { ascending: true })
+    .limit(limit);
+
+  throwIfError(error);
+  return data || [];
+};
+
+const enqueueCampaignDispatch = async ({ userId, campaignId, source }) => {
+  const nowIso = new Date().toISOString();
+
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .update({
+      status: "queued",
+      updated_at: nowIso,
+    })
+    .eq("id", campaignId)
+    .eq("user_id", userId)
+    .eq("status", "scheduled")
+    .lte("scheduled_time", nowIso)
+    .select("id, user_id")
+    .maybeSingle();
+
+  throwIfError(campaignError);
+
+  if (!campaign) {
+    return { enqueued: false, reason: "NOT_DUE_OR_ALREADY_QUEUED" };
+  }
+
+  const { data: queueRow, error: queueError } = await supabase
+    .from("campaign_dispatch_queue")
+    .upsert(
+      {
+        campaign_id: campaignId,
+        user_id: userId,
+        source: source || "scheduled",
+        status: "pending",
+        available_at: nowIso,
+        updated_at: nowIso,
+      },
+      { onConflict: "campaign_id" },
+    )
+    .select("id, campaign_id, user_id, status, source, available_at")
+    .maybeSingle();
+
+  throwIfError(queueError);
+
+  return {
+    enqueued: true,
+    queueItem: queueRow,
+  };
+};
+
+const listPendingDispatchQueue = async (limit) => {
+  const nowIso = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("campaign_dispatch_queue")
+    .select("id, campaign_id, user_id, attempts")
+    .eq("status", "pending")
+    .lte("available_at", nowIso)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  throwIfError(error);
+  return data || [];
+};
+
+const claimDispatchQueueItem = async (queueId, workerId) => {
+  const nowIso = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("campaign_dispatch_queue")
+    .update({
+      status: "processing",
+      locked_by: workerId,
+      locked_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", queueId)
+    .eq("status", "pending")
+    .select("id, campaign_id, user_id, attempts")
+    .maybeSingle();
+
+  throwIfError(error);
+  return data || null;
+};
+
+const markDispatchQueueCompleted = async (queueId) => {
+  const nowIso = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("campaign_dispatch_queue")
+    .update({
+      status: "completed",
+      completed_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", queueId);
+
+  throwIfError(error);
+};
+
+const markDispatchQueueFailed = async (queueId, errorMessage) => {
+  const nowIso = new Date().toISOString();
+
+  const { data: current, error: currentError } = await supabase
+    .from("campaign_dispatch_queue")
+    .select("attempts")
+    .eq("id", queueId)
+    .maybeSingle();
+  throwIfError(currentError);
+
+  const attempts = (current?.attempts || 0) + 1;
+
+  const { error } = await supabase
+    .from("campaign_dispatch_queue")
+    .update({
+      status: "failed",
+      attempts,
+      last_error: errorMessage || "Unknown dispatch error",
+      updated_at: nowIso,
+    })
+    .eq("id", queueId);
+
+  throwIfError(error);
+};
+
 module.exports = {
   listCampaigns,
   findCampaignById,
@@ -417,4 +594,12 @@ module.exports = {
   createCampaign,
   startCampaign,
   pauseCampaign,
+  acquireWorkerLock,
+  releaseWorkerLock,
+  listDueScheduledCampaigns,
+  enqueueCampaignDispatch,
+  listPendingDispatchQueue,
+  claimDispatchQueueItem,
+  markDispatchQueueCompleted,
+  markDispatchQueueFailed,
 };

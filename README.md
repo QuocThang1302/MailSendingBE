@@ -51,13 +51,26 @@ copy .env.example .env
 psql -f src/scripts/sql/20260330_add_template_designer_tables.sql
 ```
 
-5. Start in development mode:
+5. Run scheduler migration for scheduled campaign queue/lock:
+
+```bash
+psql -f src/scripts/sql/20260331_add_campaign_scheduler_queue.sql
+```
+
+6. Start in development mode:
 
 ```bash
 npm run dev
 ```
 
 Server base URL: `http://localhost:5000/api/v1`
+
+Scheduler environment variables (optional):
+
+- `SCHEDULER_ENABLED=true`
+- `SCHEDULER_INTERVAL_MS=15000`
+- `SCHEDULER_BATCH_SIZE=50`
+- `SCHEDULER_LOCK_TTL_SECONDS=25`
 
 ## Important Note About Seed User
 
