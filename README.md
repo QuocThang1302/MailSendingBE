@@ -7,6 +7,7 @@ Node.js + Express backend for the email marketing schema in `email_marketing_com
 - Node.js
 - Express
 - Supabase (`@supabase/supabase-js`)
+- Nodemailer (SMTP delivery)
 - JWT auth (`jsonwebtoken`)
 - Validation (`zod`)
 
@@ -72,6 +73,13 @@ Scheduler environment variables (optional):
 - `SCHEDULER_BATCH_SIZE=50`
 - `SCHEDULER_LOCK_TTL_SECONDS=25`
 
+SMTP sending:
+
+- Real email sending now uses the SMTP settings stored in `email_accounts`.
+- Required fields for an active sending account: `email_address`, `smtp_host`, `smtp_port`, optional `smtp_username`, `smtp_password`, `use_tls`.
+- `POST /campaigns/:id/start` now sends real emails, stores rendered content per recipient, and records SMTP failures in `campaign_recipients.error_message` / `email_logs`.
+- `POST /email-accounts/:id/test` sends a test email using that account. Body supports `toEmail`, `subject`, `message`.
+
 ## Important Note About Seed User
 
 The seed admin password in SQL is a placeholder hash. You can:
@@ -114,6 +122,7 @@ Designer notes:
 - You can still send `renderedHtml` / `renderedText` explicitly to override auto-render output.
 - `GET/POST/PATCH/DELETE /email-accounts`
 - `POST /email-accounts/:id/default`
+- `POST /email-accounts/:id/test`
 - `GET/POST /campaigns`
 - `GET /campaigns/:id`
 - `GET /campaigns/:id/recipients`

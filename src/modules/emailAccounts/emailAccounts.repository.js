@@ -1,4 +1,5 @@
 const { supabase } = require("../../config/supabase");
+const { sendTestEmail } = require("../campaigns/smtpMailer");
 
 const ACCOUNT_COLUMNS =
   "id, email_address, display_name, smtp_host, smtp_port, smtp_username, use_tls, is_default, status, daily_limit, sent_today, last_used_at, created_at";
@@ -142,6 +143,55 @@ const setDefaultEmailAccount = async (userId, accountId) => {
   return data || null;
 };
 
+const sendEmailAccountTest = async (userId, accountId, payload) => {
+  const account = await findEmailAccountById(userId, accountId);
+  if (!account) {
+    return null;
+  }
+
+  const toEmail = payload.toEmail || account.email_address;
+  const subject = payload.subject || "SMTP test email";
+  const text =
+    payload.message ||
+    "SMTP test email sent successfully from your Email Marketing Backend.";
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;">
+      <h2 style="margin-bottom:12px;">SMTP test email</h2>
+      <p>${text}</p>
+      <p style="color:#6b7280;font-size:14px;">If you received this message, the SMTP configuration is working.</p>
+    </div>
+  `;
+
+  const result = await sendTestEmail({
+    account,
+    toEmail,
+    subject,
+    text,
+    html,
+  });
+
+  const now = new Date().toISOString();
+
+  const { error: updateError } = await supabase
+    .from("email_accounts")
+    .update({
+      last_used_at: now,
+      status: "active",
+    })
+    .eq("id", accountId)
+    .eq("user_id", userId);
+  throwIfError(updateError);
+
+  return {
+    sent: true,
+    toEmail,
+    subject,
+    messageId: result.messageId,
+    response: result.response,
+    testedAt: now,
+  };
+};
+
 module.exports = {
   listEmailAccounts,
   findEmailAccountById,
@@ -149,4 +199,5 @@ module.exports = {
   updateEmailAccount,
   deleteEmailAccount,
   setDefaultEmailAccount,
+  sendEmailAccountTest,
 };

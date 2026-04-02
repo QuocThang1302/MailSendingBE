@@ -54,6 +54,40 @@ const setDefaultEmailAccount = async (userId, accountId) => {
   return updated;
 };
 
+const sendEmailAccountTest = async (userId, accountId, payload) => {
+  try {
+    const result = await emailAccountsRepository.sendEmailAccountTest(
+      userId,
+      accountId,
+      payload,
+    );
+    if (!result) {
+      throw new ApiError(404, "Email account not found");
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error.message === "EMAIL_ACCOUNT_NOT_FOUND") {
+      throw new ApiError(404, "Email account not found");
+    }
+    if (error.message === "EMAIL_ACCOUNT_INACTIVE") {
+      throw new ApiError(409, "Email account is inactive");
+    }
+    if (error.message === "SMTP_HOST_REQUIRED") {
+      throw new ApiError(400, "SMTP host is required for this email account");
+    }
+    if (error.message === "SMTP_FROM_ADDRESS_REQUIRED") {
+      throw new ApiError(
+        400,
+        "Email account must have a sender email address",
+      );
+    }
+    throw new ApiError(502, error.message || "SMTP test failed");
+  }
+};
+
 module.exports = {
   listEmailAccounts,
   getEmailAccountById,
@@ -61,4 +95,5 @@ module.exports = {
   updateEmailAccount,
   deleteEmailAccount,
   setDefaultEmailAccount,
+  sendEmailAccountTest,
 };

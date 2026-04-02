@@ -41,6 +41,12 @@ const updateEmailAccountSchema = z
     message: "At least one field must be provided",
   });
 
+const sendTestEmailSchema = z.object({
+  toEmail: z.string().email().max(150).optional(),
+  subject: z.string().trim().min(1).max(255).optional(),
+  message: z.string().trim().min(1).max(2000).optional(),
+});
+
 router.use(auth);
 
 router.get("/", emailAccountsController.listEmailAccounts);
@@ -68,6 +74,11 @@ router.post(
   "/:id/default",
   validate({ params: idParamSchema }),
   emailAccountsController.setDefaultEmailAccount,
+);
+router.post(
+  "/:id/test",
+  validate({ params: idParamSchema, body: sendTestEmailSchema }),
+  emailAccountsController.sendEmailAccountTest,
 );
 
 module.exports = router;

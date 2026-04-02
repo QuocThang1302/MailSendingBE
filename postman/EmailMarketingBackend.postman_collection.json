@@ -1,0 +1,533 @@
+{
+  "info": {
+    "_postman_id": "3e1823a8-c429-4c95-8835-40ea620cbfe2",
+    "name": "Email Marketing Backend",
+    "description": "Collection for testing auth, contacts, email accounts, SMTP test, templates, and campaign start.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "userName",
+      "value": "Postman Admin"
+    },
+    {
+      "key": "userEmail",
+      "value": "postman_admin@example.com"
+    },
+    {
+      "key": "userPassword",
+      "value": "Password123!"
+    },
+    {
+      "key": "contactId",
+      "value": ""
+    },
+    {
+      "key": "contactEmail",
+      "value": "recipient@example.com"
+    },
+    {
+      "key": "emailAccountId",
+      "value": ""
+    },
+    {
+      "key": "accountEmailAddress",
+      "value": "your-smtp-address@example.com"
+    },
+    {
+      "key": "accountDisplayName",
+      "value": "Marketing Bot"
+    },
+    {
+      "key": "smtpHost",
+      "value": "smtp.gmail.com"
+    },
+    {
+      "key": "smtpPort",
+      "value": "587"
+    },
+    {
+      "key": "smtpUsername",
+      "value": "your-smtp-username"
+    },
+    {
+      "key": "smtpPassword",
+      "value": "your-smtp-password"
+    },
+    {
+      "key": "smtpUseTls",
+      "value": "true"
+    },
+    {
+      "key": "testRecipientEmail",
+      "value": "recipient@example.com"
+    },
+    {
+      "key": "templateId",
+      "value": ""
+    },
+    {
+      "key": "templateName",
+      "value": "Welcome Template"
+    },
+    {
+      "key": "templateSubject",
+      "value": "Xin chao {{first_name}} tu Email Marketing Backend"
+    },
+    {
+      "key": "templateHtml",
+      "value": "<!doctype html><html><body><h1>Xin chao {{first_name}}</h1><p>Day la email test campaign gui bang SMTP that.</p><p>Cong ty: {{company}}</p></body></html>"
+    },
+    {
+      "key": "templateText",
+      "value": "Xin chao {{first_name}}. Day la email test campaign gui bang SMTP that."
+    },
+    {
+      "key": "campaignId",
+      "value": ""
+    },
+    {
+      "key": "campaignName",
+      "value": "SMTP Campaign Test"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Register",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Register success', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json && json.data) {",
+              "  pm.collectionVariables.set('token', json.data.token || '');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"{{userName}}\",\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "register"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Login success', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json && json.data) {",
+              "  pm.collectionVariables.set('token', json.data.token || '');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Me",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Create Contact",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Create contact success', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json && json.data) {",
+              "  pm.collectionVariables.set('contactId', String(json.data.id || ''));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{contactEmail}}\",\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Receiver\",\n  \"company\": \"DA1\",\n  \"city\": \"Ho Chi Minh\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/contacts",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "contacts"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. Create Email Account",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Create email account success', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json && json.data) {",
+              "  pm.collectionVariables.set('emailAccountId', String(json.data.id || ''));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"emailAddress\": \"{{accountEmailAddress}}\",\n  \"displayName\": \"{{accountDisplayName}}\",\n  \"smtpHost\": \"{{smtpHost}}\",\n  \"smtpPort\": {{smtpPort}},\n  \"smtpUsername\": \"{{smtpUsername}}\",\n  \"smtpPassword\": \"{{smtpPassword}}\",\n  \"useTls\": {{smtpUseTls}},\n  \"isDefault\": true,\n  \"status\": \"active\",\n  \"dailyLimit\": 500\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/email-accounts",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "email-accounts"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. SMTP Test",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"toEmail\": \"{{testRecipientEmail}}\",\n  \"subject\": \"SMTP test from Postman\",\n  \"message\": \"Neu ban nhan duoc email nay, cau hinh SMTP da hoat dong.\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/email-accounts/{{emailAccountId}}/test",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "email-accounts",
+            "{{emailAccountId}}",
+            "test"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "8. Create Template",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Create template success', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json && json.data) {",
+              "  pm.collectionVariables.set('templateId', String(json.data.id || ''));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"templateName\": \"{{templateName}}\",\n  \"subject\": \"{{templateSubject}}\",\n  \"previewText\": \"Email campaign test tu Postman\",\n  \"contentHtml\": \"{{templateHtml}}\",\n  \"contentText\": \"{{templateText}}\",\n  \"isActive\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/templates",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "templates"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "9. Create Campaign",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Create campaign success', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json && json.data) {",
+              "  pm.collectionVariables.set('campaignId', String(json.data.id || ''));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"campaignName\": \"{{campaignName}}\",\n  \"templateId\": {{templateId}},\n  \"emailAccountId\": {{emailAccountId}},\n  \"campaignType\": \"regular\",\n  \"contactIds\": [{{contactId}}]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/campaigns",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "campaigns"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Start Campaign",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/campaigns/{{campaignId}}/start",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "campaigns",
+            "{{campaignId}}",
+            "start"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Get Campaign",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/campaigns/{{campaignId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "campaigns",
+            "{{campaignId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12. Get Campaign Recipients",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/campaigns/{{campaignId}}/recipients?page=1&pageSize=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "campaigns",
+            "{{campaignId}}",
+            "recipients"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "pageSize",
+              "value": "20"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
