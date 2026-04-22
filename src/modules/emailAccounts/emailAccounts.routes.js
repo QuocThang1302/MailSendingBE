@@ -89,10 +89,5 @@ router.post(
   validate({ params: idParamSchema }),
   emailAccountsController.setDefaultEmailAccount,
 );
-router.post(
-  "/:id/test",
-  validate({ params: idParamSchema, body: sendTestEmailSchema }),
-  emailAccountsController.sendEmailAccountTest,
-);
 
 module.exports = router;
