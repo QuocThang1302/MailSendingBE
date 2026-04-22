@@ -48,6 +48,14 @@ const setDefaultEmailAccount = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Set default email account");
 });
 
+const testSmtpConnection = asyncHandler(async (req, res) => {
+  const data = await emailAccountsService.testSmtpConnection(
+    req.user.id,
+    req.body,
+  );
+  return sendOk(res, data, "SMTP connection successful");
+});
+
 module.exports = {
   listEmailAccounts,
   getEmailAccountById,
@@ -55,4 +63,5 @@ module.exports = {
   updateEmailAccount,
   deleteEmailAccount,
   setDefaultEmailAccount,
+  testSmtpConnection,
 };

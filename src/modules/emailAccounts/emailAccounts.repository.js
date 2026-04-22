@@ -32,6 +32,20 @@ const findEmailAccountById = async (userId, accountId) => {
   return data || null;
 };
 
+const findEmailAccountForSmtp = async (userId, accountId) => {
+  const { data, error } = await supabase
+    .from("email_accounts")
+    .select(
+      "id, email_address, display_name, smtp_host, smtp_port, smtp_username, smtp_password, use_tls, is_default, status, daily_limit, sent_today, last_used_at, created_at",
+    )
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfError(error);
+  return data || null;
+};
+
 const createEmailAccount = async (userId, payload) => {
   if (payload.isDefault) {
     const { error: resetError } = await supabase
@@ -145,6 +159,7 @@ const setDefaultEmailAccount = async (userId, accountId) => {
 module.exports = {
   listEmailAccounts,
   findEmailAccountById,
+  findEmailAccountForSmtp,
   createEmailAccount,
   updateEmailAccount,
   deleteEmailAccount,

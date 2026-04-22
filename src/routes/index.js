@@ -6,6 +6,7 @@ const templateRoutes = require("../modules/templates/templates.routes");
 const emailAccountRoutes = require("../modules/emailAccounts/emailAccounts.routes");
 const campaignRoutes = require("../modules/campaigns/campaigns.routes");
 const dashboardRoutes = require("../modules/dashboard/dashboard.routes");
+const individualEmailRoutes = require("../modules/individualEmails/individualEmails.routes");
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use("/templates", templateRoutes);
 router.use("/email-accounts", emailAccountRoutes);
 router.use("/campaigns", campaignRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/individual-emails", individualEmailRoutes);
 
 module.exports = router;

@@ -41,6 +41,21 @@ const updateEmailAccountSchema = z
     message: "At least one field must be provided",
   });
 
+const testSmtpSchema = z
+  .object({
+    accountId: z.number().int().positive().optional(),
+    emailAddress: z.string().email().max(150).optional(),
+    displayName: z.string().trim().max(150).optional(),
+    smtpHost: z.string().trim().max(150).optional(),
+    smtpPort: z.number().int().positive().max(65535).optional(),
+    smtpUsername: z.string().trim().max(150).optional(),
+    smtpPassword: z.string().max(255).optional(),
+    useTls: z.boolean().optional(),
+  })
+  .refine((value) => value.accountId || value.smtpHost || value.smtpUsername, {
+    message: "Provide an accountId or SMTP settings to test",
+  });
+
 router.use(auth);
 
 router.get("/", emailAccountsController.listEmailAccounts);
@@ -48,6 +63,11 @@ router.post(
   "/",
   validate({ body: createEmailAccountSchema }),
   emailAccountsController.createEmailAccount,
+);
+router.post(
+  "/test",
+  validate({ body: testSmtpSchema }),
+  emailAccountsController.testSmtpConnection,
 );
 router.get(
   "/:id",
