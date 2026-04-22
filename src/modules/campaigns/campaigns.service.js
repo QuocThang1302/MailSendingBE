@@ -93,6 +93,27 @@ const startCampaign = async (userId, campaignId) => {
     if (error.message === "INVALID_CAMPAIGN_STATUS") {
       throw new ApiError(409, "Campaign cannot be started from current status");
     }
+    if (error.message === "TEMPLATE_NOT_FOUND") {
+      throw new ApiError(404, "Template not found");
+    }
+    if (error.message === "EMAIL_ACCOUNT_NOT_FOUND") {
+      throw new ApiError(404, "Email account not found");
+    }
+    if (error.message === "TEMPLATE_INACTIVE") {
+      throw new ApiError(409, "Template is inactive");
+    }
+    if (error.message === "EMAIL_ACCOUNT_INACTIVE") {
+      throw new ApiError(409, "Email account is inactive");
+    }
+    if (error.message === "SMTP_HOST_REQUIRED") {
+      throw new ApiError(400, "SMTP host is required for this email account");
+    }
+    if (error.message === "SMTP_FROM_ADDRESS_REQUIRED") {
+      throw new ApiError(
+        400,
+        "Email account must have a sender email address",
+      );
+    }
     throw error;
   }
 };
