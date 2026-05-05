@@ -1,4 +1,5 @@
 const { Router } = require("express");
+const multer = require("multer");
 const { z } = require("zod");
 
 const auth = require("../../middlewares/auth");
@@ -6,6 +7,12 @@ const validate = require("../../common/validate");
 const individualEmailsController = require("./individualEmails.controller");
 
 const router = Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+});
 
 const sendBaseSchema = z.object({
   emailAccountId: z.number().int().positive().optional(),
@@ -24,6 +31,11 @@ const sendSchema = sendBaseSchema.extend({
 
 router.use(auth);
 
+router.post(
+  "/import-recipients",
+  upload.single("file"),
+  individualEmailsController.importRecipients,
+);
 router.post(
   "/preview",
   validate({ body: previewSchema }),

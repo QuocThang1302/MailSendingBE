@@ -22,12 +22,17 @@ const fieldIdParamSchema = z.object({
   fieldId: z.coerce.number().int().positive(),
 });
 
+const tagIdParamSchema = z.object({
+  tagId: z.coerce.number().int().positive(),
+});
+
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().trim().max(150).optional(),
   status: z.string().trim().max(50).optional(),
   city: z.string().trim().max(100).optional(),
+  tagId: z.coerce.number().int().positive().optional(),
 });
 
 const createContactSchema = z.object({
@@ -186,6 +191,11 @@ router.post(
   "/tags",
   validate({ body: createTagSchema }),
   contactsController.createTag,
+);
+router.get(
+  "/tags/:tagId/recipients",
+  validate({ params: tagIdParamSchema }),
+  contactsController.listTagRecipients,
 );
 
 router.get(

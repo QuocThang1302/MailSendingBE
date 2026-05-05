@@ -33,7 +33,7 @@ const mapContactPayloadToRow = (userId, payload) => ({
 
 const listContacts = async (
   userId,
-  { search, status, city, page, pageSize },
+  { search, status, city, tagId, page, pageSize },
 ) => {
   const offset = (page - 1) * pageSize;
 
@@ -50,6 +50,39 @@ const listContacts = async (
     builder = builder.ilike("city", city);
   }
 
+  if (tagId) {
+    const { data: ownedTag, error: ownedTagError } = await supabase
+      .from("contact_tags")
+      .select("id")
+      .eq("id", tagId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    throwIfError(ownedTagError);
+
+    if (!ownedTag) {
+      return {
+        total: 0,
+        rows: [],
+      };
+    }
+
+    const { data: mappings, error: mappingsError } = await supabase
+      .from("contact_tag_map")
+      .select("contact_id")
+      .eq("tag_id", tagId);
+    throwIfError(mappingsError);
+
+    const contactIds = (mappings || []).map((row) => row.contact_id);
+    if (contactIds.length === 0) {
+      return {
+        total: 0,
+        rows: [],
+      };
+    }
+
+    builder = builder.in("id", contactIds);
+  }
+
   if (search) {
     const keyword = `%${search}%`;
     builder = builder.or(
@@ -63,9 +96,52 @@ const listContacts = async (
 
   throwIfError(error);
 
+  const rows = data || [];
+  const contactIds = rows.map((row) => row.id);
+
+  if (contactIds.length === 0) {
+    return {
+      total: count || 0,
+      rows,
+    };
+  }
+
+  const { data: tagMappings, error: tagMappingsError } = await supabase
+    .from("contact_tag_map")
+    .select("contact_id, tag_id")
+    .in("contact_id", contactIds);
+  throwIfError(tagMappingsError);
+
+  const tagIds = [
+    ...new Set((tagMappings || []).map((row) => row.tag_id).filter(Boolean)),
+  ];
+  let tagsById = new Map();
+  if (tagIds.length > 0) {
+    const { data: tags, error: tagsError } = await supabase
+      .from("contact_tags")
+      .select("id, tag_name, color")
+      .eq("user_id", userId)
+      .in("id", tagIds);
+    throwIfError(tagsError);
+    tagsById = new Map((tags || []).map((tag) => [tag.id, tag]));
+  }
+
+  const tagIdsByContact = new Map();
+  for (const mapping of tagMappings || []) {
+    if (!tagIdsByContact.has(mapping.contact_id)) {
+      tagIdsByContact.set(mapping.contact_id, []);
+    }
+    tagIdsByContact.get(mapping.contact_id).push(mapping.tag_id);
+  }
+
   return {
     total: count || 0,
-    rows: data || [],
+    rows: rows.map((row) => ({
+      ...row,
+      tags: (tagIdsByContact.get(row.id) || [])
+        .map((id) => tagsById.get(id))
+        .filter(Boolean),
+    })),
   };
 };
 
@@ -280,7 +356,27 @@ const listTags = async (userId) => {
     .order("created_at", { ascending: false });
 
   throwIfError(error);
-  return data || [];
+  const tags = data || [];
+  const tagIds = tags.map((tag) => tag.id);
+  if (tagIds.length === 0) {
+    return [];
+  }
+
+  const { data: mappings, error: mappingsError } = await supabase
+    .from("contact_tag_map")
+    .select("tag_id")
+    .in("tag_id", tagIds);
+  throwIfError(mappingsError);
+
+  const counts = new Map();
+  for (const mapping of mappings || []) {
+    counts.set(mapping.tag_id, (counts.get(mapping.tag_id) || 0) + 1);
+  }
+
+  return tags.map((tag) => ({
+    ...tag,
+    contact_count: counts.get(tag.id) || 0,
+  }));
 };
 
 const listDynamicFields = async (userId) => {
@@ -467,6 +563,42 @@ const getContactTags = async (contactId) => {
   return data || [];
 };
 
+const listTagRecipients = async (userId, tagId) => {
+  const { data: ownedTag, error: ownedTagError } = await supabase
+    .from("contact_tags")
+    .select("id")
+    .eq("id", tagId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  throwIfError(ownedTagError);
+
+  if (!ownedTag) {
+    return null;
+  }
+
+  const { data: mappings, error: mappingsError } = await supabase
+    .from("contact_tag_map")
+    .select("contact_id")
+    .eq("tag_id", tagId);
+  throwIfError(mappingsError);
+
+  const contactIds = (mappings || []).map((row) => row.contact_id);
+  if (contactIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("email_contacts")
+    .select("id, email, first_name, last_name, email_status")
+    .eq("user_id", userId)
+    .in("id", contactIds)
+    .eq("email_status", "active")
+    .order("email", { ascending: true });
+  throwIfError(error);
+
+  return data || [];
+};
+
 const replaceContactTags = async (userId, contactId, tagIds) => {
   const contact = await findContactById(userId, contactId);
   if (!contact) {
@@ -521,6 +653,7 @@ module.exports = {
   updateDynamicField,
   deleteDynamicField,
   getContactTags,
+  listTagRecipients,
   replaceContactTags,
   listContactFieldValues,
   replaceContactFieldValues,

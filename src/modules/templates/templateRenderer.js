@@ -43,6 +43,23 @@ const readText = (props, keys, fallback = "") => {
   return fallback;
 };
 
+const clampQrSize = (value) => {
+  const size = Number.parseInt(value, 10);
+  if (!Number.isFinite(size)) {
+    return 220;
+  }
+  return Math.max(96, Math.min(480, size));
+};
+
+const buildQrPreviewSrc = (rawValue, size) => {
+  const base = "https://api.qrserver.com/v1/create-qr-code/";
+  const params = new URLSearchParams({
+    size: `${size}x${size}`,
+    data: String(rawValue || ""),
+  });
+  return `${base}?${params.toString()}`;
+};
+
 const renderBlock = (block) => {
   if (!block || typeof block !== "object") {
     return "";
@@ -86,6 +103,33 @@ const renderBlock = (block) => {
       return "";
     }
     return `<img src="${src}" alt="${alt}" style="display: block; ${styleWidth} height: auto; margin: 0 0 12px;" />`;
+  }
+
+  if (type === "qrcode" || type === "qr") {
+    const rawValue = readText(props, ["value", "content", "data"], "");
+    const title = escapeHtml(readText(props, ["title"], "QR Code"));
+    const caption = escapeHtml(readText(props, ["caption"], ""));
+    const size = clampQrSize(props.size);
+    const previewSrc = escapeAttribute(buildQrPreviewSrc(rawValue, size));
+    const valueAttribute = escapeAttribute(rawValue);
+
+    if (!rawValue.trim()) {
+      return "";
+    }
+
+    const captionHtml = caption
+      ? `<div style="margin-top: 10px; color: #64748b; font-size: 13px;">${caption}</div>`
+      : "";
+
+    return [
+      '<div style="margin: 0 0 16px;">',
+      `  <div style="border: 1px solid #dbeafe; border-radius: 16px; background: #f8fbff; padding: 18px; text-align: center;">`,
+      `    <div style="margin-bottom: 10px; color: #334155; font-size: 18px; font-weight: 700;">${title}</div>`,
+      `    <img src="${previewSrc}" alt="QR code" width="${size}" height="${size}" data-mail-qr="true" data-qr-value="${valueAttribute}" data-qr-size="${size}" style="display: block; width: ${size}px; height: ${size}px; max-width: 100%; margin: 0 auto;" />`,
+      `    ${captionHtml}`,
+      "  </div>",
+      "</div>",
+    ].join("\n");
   }
 
   if (type === "button") {
