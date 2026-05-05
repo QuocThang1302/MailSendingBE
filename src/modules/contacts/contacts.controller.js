@@ -61,6 +61,14 @@ const createTag = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Created tag", 201);
 });
 
+const listTagRecipients = asyncHandler(async (req, res) => {
+  const data = await contactsService.listTagRecipients(
+    req.user.id,
+    req.params.tagId,
+  );
+  return sendOk(res, data, "Fetched tag recipients");
+});
+
 const listDynamicFields = asyncHandler(async (req, res) => {
   const data = await contactsService.listDynamicFields(req.user.id);
   return sendOk(res, data, "Fetched dynamic fields");
@@ -124,6 +132,7 @@ module.exports = {
   deleteContact,
   listTags,
   createTag,
+  listTagRecipients,
   listDynamicFields,
   createDynamicField,
   updateDynamicField,
