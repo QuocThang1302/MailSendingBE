@@ -7,6 +7,7 @@ const emailAccountRoutes = require("../modules/emailAccounts/emailAccounts.route
 const campaignRoutes = require("../modules/campaigns/campaigns.routes");
 const dashboardRoutes = require("../modules/dashboard/dashboard.routes");
 const individualEmailRoutes = require("../modules/individualEmails/individualEmails.routes");
+const aiMediaRoutes = require("../modules/aiMedia/aiMedia.routes");
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use("/email-accounts", emailAccountRoutes);
 router.use("/campaigns", campaignRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/individual-emails", individualEmailRoutes);
+router.use("/ai-media", aiMediaRoutes);
 
 module.exports = router;

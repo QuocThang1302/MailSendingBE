@@ -80,6 +80,16 @@ SMTP sending:
 - `POST /campaigns/:id/start` now sends real emails, stores rendered content per recipient, and records SMTP failures in `campaign_recipients.error_message` / `email_logs`.
 - `POST /email-accounts/:id/test` sends a test email using that account. Body supports `toEmail`, `subject`, `message`.
 
+AI media generation for email:
+
+- `AI_MEDIA_PROVIDER` controls the provider. Use `pollinations` for Pollinations or `openai` for OpenAI.
+- For Pollinations, configure `POLLINATIONS_API_KEY` on the backend only if your account/API tier requires it.
+- For OpenAI, configure `OPENAI_API_KEY` on the backend only.
+- Generated files are stored in `public/media/generated` and served from `/media/generated/...`.
+- Set `PUBLIC_BASE_URL` or `MEDIA_PUBLIC_BASE_URL` to a public URL before sending real emails, because email clients must be able to fetch the image/video thumbnail over the internet.
+- Use image URLs directly in email HTML.
+- For video, use a thumbnail or button that links to the stored MP4 or a landing page. Most email clients do not reliably play embedded video.
+
 ## Important Note About Seed User
 
 The seed admin password in SQL is a placeholder hash. You can:
@@ -129,6 +139,53 @@ Designer notes:
 - `POST /campaigns/:id/start`
 - `POST /campaigns/:id/pause`
 - `GET /dashboard/overview`
+- `POST /ai-media/images`
+- `POST /ai-media/videos`
+- `GET /ai-media/videos/:videoId`
+- `POST /ai-media/videos/:videoId/download`
+- `POST /ai-media/video-email-snippet`
+
+AI media examples:
+
+Provider env example:
+
+```env
+AI_MEDIA_PROVIDER=pollinations
+POLLINATIONS_API_KEY=your_pollinations_api_key
+POLLINATIONS_BASE_URL=https://gen.pollinations.ai
+POLLINATIONS_IMAGE_MODEL=flux
+POLLINATIONS_VIDEO_MODEL=
+```
+
+```http
+POST /api/v1/ai-media/images
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "prompt": "Banner email khuyến mãi cà phê Việt Nam, phong cách cao cấp, nền sáng",
+  "altText": "Khuyến mãi cà phê",
+  "size": "1536x1024",
+  "emailWidth": 600
+}
+```
+
+The response includes `url` and `emailHtml`, which can be saved into a template image/html block.
+
+```http
+POST /api/v1/ai-media/videos
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "prompt": "Video 8 giây giới thiệu sản phẩm cà phê rang xay, ánh sáng tự nhiên",
+  "size": "1280x720",
+  "seconds": 8
+}
+```
+
+For OpenAI, poll `GET /api/v1/ai-media/videos/:videoId`, then call `POST /api/v1/ai-media/videos/:videoId/download` after the status is `completed`.
+For Pollinations, the backend downloads and stores the MP4 during `POST /api/v1/ai-media/videos`, so the response can already include `status: "completed"`, `url`, and `emailHtml`.
 
 ## Authentication
 
