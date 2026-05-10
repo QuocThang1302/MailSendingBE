@@ -34,6 +34,17 @@ const env = {
   schedulerIntervalMs: toInt(process.env.SCHEDULER_INTERVAL_MS, 15000),
   schedulerBatchSize: toInt(process.env.SCHEDULER_BATCH_SIZE, 50),
   schedulerLockTtlSeconds: toInt(process.env.SCHEDULER_LOCK_TTL_SECONDS, 25),
+  aiMediaProvider: process.env.AI_MEDIA_PROVIDER || "pollinations",
+  openaiApiKey: process.env.OPENAI_API_KEY || "",
+  openaiImageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1.5",
+  openaiVideoModel: process.env.OPENAI_VIDEO_MODEL || "sora-2",
+  pollinationsApiKey: process.env.POLLINATIONS_API_KEY || "",
+  pollinationsBaseUrl:
+    process.env.POLLINATIONS_BASE_URL || "https://gen.pollinations.ai",
+  pollinationsImageModel: process.env.POLLINATIONS_IMAGE_MODEL || "flux",
+  pollinationsVideoModel: process.env.POLLINATIONS_VIDEO_MODEL || "",
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
+  mediaPublicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL || "",
 };
 
 if (!env.supabaseUrl) {
