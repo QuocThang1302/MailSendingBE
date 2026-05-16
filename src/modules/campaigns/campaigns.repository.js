@@ -19,6 +19,23 @@ const EMAIL_ACCOUNT_SEND_COLUMNS =
 const TEMPLATE_SEND_COLUMNS =
   "id, template_name, subject, preview_text, content_html, content_text, is_active";
 
+const getAccessibleTemplateOwnerIds = async (userId) => {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id")
+    .eq("role", "admin")
+    .eq("is_active", true);
+
+  throwIfError(error);
+
+  return [
+    ...new Set([
+      userId,
+      ...((data || []).map((row) => row.id).filter(Boolean)),
+    ]),
+  ];
+};
+
 const decorateCampaignRows = async (rows) => {
   if (!rows || rows.length === 0) {
     return [];
@@ -180,11 +197,13 @@ const listCampaignRecipients = async (
 };
 
 const createCampaign = async (userId, payload) => {
+  const templateOwnerIds = await getAccessibleTemplateOwnerIds(userId);
+
   const { data: templateCheck, error: templateError } = await supabase
     .from("email_templates")
     .select("id")
     .eq("id", payload.templateId)
-    .eq("user_id", userId)
+    .in("user_id", templateOwnerIds)
     .maybeSingle();
   throwIfError(templateError);
   if (!templateCheck) {
@@ -368,6 +387,7 @@ const startCampaign = async (userId, campaignId) => {
   }
 
   const now = new Date().toISOString();
+  const templateOwnerIds = await getAccessibleTemplateOwnerIds(userId);
 
   const { error: markSendingError } = await supabase
     .from("campaigns")
@@ -387,7 +407,7 @@ const startCampaign = async (userId, campaignId) => {
       .from("email_templates")
       .select(TEMPLATE_SEND_COLUMNS)
       .eq("id", campaign.template_id)
-      .eq("user_id", userId)
+      .in("user_id", templateOwnerIds)
       .maybeSingle(),
     supabase
       .from("email_accounts")
