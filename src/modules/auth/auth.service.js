@@ -27,7 +27,7 @@ const signToken = (user) => {
   );
 };
 
-const register = async ({ name, email, password, role = "admin" }) => {
+const register = async ({ name, email, password }) => {
   const existing = await authRepository.findUserByEmail(email);
   if (existing) {
     throw new ApiError(409, "Email already exists");
@@ -38,7 +38,7 @@ const register = async ({ name, email, password, role = "admin" }) => {
     name,
     email,
     password: passwordHash,
-    role,
+    role: "user",
   });
 
   const token = signToken(user);
