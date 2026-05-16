@@ -170,10 +170,7 @@ const getTemplateDesigner = async (userId, templateId) => {
   if (!data) {
     return {
       templateId,
-      layout: {
-        schemaVersion: 1,
-        blocks: [],
-      },
+      layout: null,
       editorState: null,
       renderedHtml: null,
       renderedText: null,

@@ -29,6 +29,22 @@ const createCampaign = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Created campaign", 201);
 });
 
+const updateCampaign = asyncHandler(async (req, res) => {
+  const data = await campaignsService.updateCampaign(
+    req.user.id,
+    req.params.id,
+    req.body,
+  );
+  return sendOk(res, data, "Updated campaign");
+});
+
+const importRecipients = asyncHandler(async (req, res) => {
+  const data = await campaignsService.importRecipients(req.user.id, {
+    file: req.file,
+  });
+  return sendOk(res, data, "Imported campaign recipients");
+});
+
 const startCampaign = asyncHandler(async (req, res) => {
   const data = await campaignsService.startCampaign(req.user.id, req.params.id);
   return sendOk(res, data, "Campaign started");
@@ -44,6 +60,8 @@ module.exports = {
   getCampaignById,
   listCampaignRecipients,
   createCampaign,
+  updateCampaign,
+  importRecipients,
   startCampaign,
   pauseCampaign,
 };

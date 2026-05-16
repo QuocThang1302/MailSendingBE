@@ -194,7 +194,7 @@ const collectText = (blocks) => {
 };
 
 const renderTemplateLayout = (layout) => {
-  const blocks = toArray(layout?.blocks);
+  const blocks = layout?.root ? [layout.root] : toArray(layout?.blocks);
   const body = blocks.map(renderBlock).join("\n");
 
   const html = [

@@ -1,5 +1,78 @@
 const ApiError = require("../../common/ApiError");
+const XLSX = require("xlsx");
 const campaignsRepository = require("./campaigns.repository");
+
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const getColumnValue = (row, keys) => {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      return row[key];
+    }
+  }
+  return undefined;
+};
+
+const parseRecipientsFromFile = (file) => {
+  if (!file?.buffer) {
+    throw new ApiError(
+      400,
+      "Missing upload file. Use multipart/form-data with field 'file'.",
+    );
+  }
+
+  const workbook = XLSX.read(file.buffer, {
+    type: "buffer",
+    raw: false,
+  });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    return [];
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    defval: "",
+    raw: false,
+  });
+
+  return rows.map((row) =>
+    normalizeEmail(
+      getColumnValue(row, [
+        "email",
+        "Email",
+        "EMAIL",
+        "recipient",
+        "Recipient",
+        "recipientEmail",
+        "RecipientEmail",
+      ]),
+    ),
+  );
+};
+
+const mapCampaignError = (error) => {
+  if (error.message === "CAMPAIGN_NOT_FOUND") {
+    throw new ApiError(404, "Campaign not found");
+  }
+  if (error.message === "CAMPAIGN_LOCKED") {
+    throw new ApiError(
+      409,
+      "Campaign is already sending or sent and cannot be edited",
+    );
+  }
+  if (error.message === "TEMPLATE_NOT_FOUND") {
+    throw new ApiError(404, "Template not found");
+  }
+  if (error.message === "EMAIL_ACCOUNT_NOT_FOUND") {
+    throw new ApiError(404, "Email account not found");
+  }
+  if (error.message === "SEGMENT_NOT_FOUND") {
+    throw new ApiError(404, "Segment not found");
+  }
+  throw error;
+};
 
 const listCampaigns = async (userId, query) => {
   const page = query.page || 1;
@@ -66,17 +139,52 @@ const createCampaign = async (userId, payload) => {
   try {
     return await campaignsRepository.createCampaign(userId, payload);
   } catch (error) {
-    if (error.message === "TEMPLATE_NOT_FOUND") {
-      throw new ApiError(404, "Template not found");
-    }
-    if (error.message === "EMAIL_ACCOUNT_NOT_FOUND") {
-      throw new ApiError(404, "Email account not found");
-    }
-    if (error.message === "SEGMENT_NOT_FOUND") {
-      throw new ApiError(404, "Segment not found");
-    }
-    throw error;
+    mapCampaignError(error);
   }
+};
+
+const updateCampaign = async (userId, campaignId, payload) => {
+  try {
+    return await campaignsRepository.updateCampaign(userId, campaignId, payload);
+  } catch (error) {
+    mapCampaignError(error);
+  }
+};
+
+const importRecipients = async (_userId, { file }) => {
+  const rows = parseRecipientsFromFile(file);
+  const uniqueRecipients = [];
+  const errors = [];
+  const seen = new Set();
+
+  rows.forEach((email, index) => {
+    const rowNumber = index + 2;
+
+    if (!email) {
+      errors.push({ row: rowNumber, message: "Missing email" });
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(email)) {
+      errors.push({ row: rowNumber, message: "Invalid email format" });
+      return;
+    }
+
+    if (seen.has(email)) {
+      return;
+    }
+
+    seen.add(email);
+    uniqueRecipients.push(email);
+  });
+
+  return {
+    totalRows: rows.length,
+    importedCount: uniqueRecipients.length,
+    invalidRows: errors.length,
+    recipients: uniqueRecipients,
+    errors,
+  };
 };
 
 const startCampaign = async (userId, campaignId) => {
@@ -131,6 +239,8 @@ module.exports = {
   getCampaignById,
   listCampaignRecipients,
   createCampaign,
+  updateCampaign,
+  importRecipients,
   startCampaign,
   pauseCampaign,
 };
