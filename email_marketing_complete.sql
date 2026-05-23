@@ -18,7 +18,7 @@ CREATE TABLE users (
     name         VARCHAR(150) NOT NULL,
     email        VARCHAR(150) UNIQUE NOT NULL,
     password     TEXT NOT NULL,
-    role         VARCHAR(50) DEFAULT 'admin',
+    role         VARCHAR(50) DEFAULT 'user',
     avatar_url   TEXT,
     is_active    BOOLEAN DEFAULT TRUE,
     last_login   TIMESTAMP,
@@ -480,12 +480,12 @@ INSERT INTO email_accounts (user_id, email_address, display_name, smtp_host, smt
 (1, 'noreply@yourdomain.com', 'ChadMailer', 'smtp.gmail.com', 587, 'noreply@yourdomain.com', 'your_app_password', TRUE, TRUE, 'active');
 
 -- Template mẫu với placeholder cá nhân hóa
-INSERT INTO email_templates (user_id, template_name, subject, preview_text, content_html, version, is_active) VALUES
+INSERT INTO email_templates (user_id, template_name, subject, preview_text, content_html, content_text, version, is_active) VALUES
 (1,
  'Welcome Email',
  'Chào mừng {{first_name}} đến với chúng tôi!',
  'Cảm ơn bạn đã đăng ký...',
- '<html><body>
+ $$<html><body>
   <p>{{greeting}}</p>
   <p>Xin chào <strong>{{first_name}}</strong>,</p>
   <p>Cảm ơn bạn đã đăng ký nhận tin từ chúng tôi.</p>
@@ -494,7 +494,183 @@ INSERT INTO email_templates (user_id, template_name, subject, preview_text, cont
   <p style="font-size:11px;color:#999;">
     <a href="{{unsubscribe_url}}">Hủy đăng ký</a>
   </p>
- </body></html>',
+ </body></html>$$,
+ $${{greeting}}
+
+Xin chào {{first_name}},
+Cảm ơn bạn đã đăng ký nhận tin từ chúng tôi.
+
+{{promo_block}}
+
+Trân trọng,
+Đội ngũ ChadMailer
+
+Hủy đăng ký: {{unsubscribe_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Monthly Newsletter',
+ 'Bản tin tháng {{month}}: cập nhật mới dành cho {{first_name}}',
+ 'Tin mới, nội dung nổi bật và ưu đãi trong tháng này.',
+ $$<html><body>
+  <h2>Bản tin tháng {{month}}</h2>
+  <p>Xin chào <strong>{{first_name}}</strong>,</p>
+  <p>Dưới đây là những cập nhật nổi bật nhất trong tháng này:</p>
+  <ul>
+    <li>{{highlight_1}}</li>
+    <li>{{highlight_2}}</li>
+    <li>{{highlight_3}}</li>
+  </ul>
+  <p><a href="{{newsletter_url}}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;">Đọc bản tin đầy đủ</a></p>
+  <p style="font-size:11px;color:#999;"><a href="{{unsubscribe_url}}">Hủy đăng ký</a></p>
+ </body></html>$$,
+ $$Bản tin tháng {{month}}
+
+Xin chào {{first_name}},
+Dưới đây là những cập nhật nổi bật nhất trong tháng này:
+- {{highlight_1}}
+- {{highlight_2}}
+- {{highlight_3}}
+
+Đọc bản tin đầy đủ: {{newsletter_url}}
+Hủy đăng ký: {{unsubscribe_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Flash Sale Promotion',
+ '{{first_name}}, ưu đãi {{discount_percent}}% chỉ còn trong {{hours_left}} giờ',
+ 'Ưu đãi có thời hạn cho sản phẩm bạn quan tâm.',
+ $$<html><body>
+  <h2>Ưu đãi đặc biệt dành cho bạn</h2>
+  <p>Xin chào <strong>{{first_name}}</strong>,</p>
+  <p>Nhận ngay ưu đãi <strong>{{discount_percent}}%</strong> cho đơn hàng tiếp theo.</p>
+  <p>Mã giảm giá của bạn: <strong>{{coupon_code}}</strong></p>
+  <p>Ưu đãi kết thúc sau {{hours_left}} giờ.</p>
+  <p><a href="{{shop_url}}" style="display:inline-block;background:#dc2626;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;">Mua ngay</a></p>
+  <p style="font-size:11px;color:#999;"><a href="{{unsubscribe_url}}">Hủy đăng ký</a></p>
+ </body></html>$$,
+ $$Ưu đãi đặc biệt dành cho bạn
+
+Xin chào {{first_name}},
+Nhận ngay ưu đãi {{discount_percent}}% cho đơn hàng tiếp theo.
+Mã giảm giá: {{coupon_code}}
+Ưu đãi kết thúc sau {{hours_left}} giờ.
+
+Mua ngay: {{shop_url}}
+Hủy đăng ký: {{unsubscribe_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Abandoned Cart Reminder',
+ '{{first_name}}, bạn còn sản phẩm trong giỏ hàng',
+ 'Hoàn tất đơn hàng trước khi sản phẩm hết hàng.',
+ $$<html><body>
+  <h2>Giỏ hàng của bạn đang chờ</h2>
+  <p>Xin chào <strong>{{first_name}}</strong>,</p>
+  <p>Bạn vẫn còn <strong>{{cart_item_count}}</strong> sản phẩm trong giỏ hàng.</p>
+  <p>{{cart_summary}}</p>
+  <p><a href="{{cart_url}}" style="display:inline-block;background:#111827;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;">Quay lại giỏ hàng</a></p>
+  <p>Nếu cần hỗ trợ, hãy trả lời email này để đội ngũ của chúng tôi giúp bạn.</p>
+  <p style="font-size:11px;color:#999;"><a href="{{unsubscribe_url}}">Hủy đăng ký</a></p>
+ </body></html>$$,
+ $$Giỏ hàng của bạn đang chờ
+
+Xin chào {{first_name}},
+Bạn vẫn còn {{cart_item_count}} sản phẩm trong giỏ hàng.
+
+{{cart_summary}}
+
+Quay lại giỏ hàng: {{cart_url}}
+Hủy đăng ký: {{unsubscribe_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Re-engagement Email',
+ 'Đã lâu không gặp, {{first_name}}',
+ 'Chúng tôi có vài cập nhật mới dành cho bạn.',
+ $$<html><body>
+  <h2>Đã lâu không gặp, {{first_name}}</h2>
+  <p>Chúng tôi vừa có nhiều cập nhật mới và muốn chia sẻ với bạn.</p>
+  <p>{{personal_recommendation}}</p>
+  <p><a href="{{return_url}}" style="display:inline-block;background:#059669;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;">Khám phá lại ngay</a></p>
+  <p>Nếu bạn không muốn nhận email nữa, có thể hủy đăng ký bên dưới.</p>
+  <p style="font-size:11px;color:#999;"><a href="{{unsubscribe_url}}">Hủy đăng ký</a></p>
+ </body></html>$$,
+ $$Đã lâu không gặp, {{first_name}}
+
+Chúng tôi vừa có nhiều cập nhật mới và muốn chia sẻ với bạn.
+{{personal_recommendation}}
+
+Khám phá lại ngay: {{return_url}}
+Hủy đăng ký: {{unsubscribe_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Event Invitation',
+ 'Mời {{first_name}} tham dự {{event_name}}',
+ 'Giữ chỗ của bạn cho sự kiện sắp tới.',
+ $$<html><body>
+  <h2>{{event_name}}</h2>
+  <p>Xin chào <strong>{{first_name}}</strong>,</p>
+  <p>Chúng tôi trân trọng mời bạn tham dự <strong>{{event_name}}</strong>.</p>
+  <p>Thời gian: {{event_time}}</p>
+  <p>Địa điểm: {{event_location}}</p>
+  <p><a href="{{registration_url}}" style="display:inline-block;background:#7c3aed;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;">Đăng ký tham dự</a></p>
+  <p style="font-size:11px;color:#999;"><a href="{{unsubscribe_url}}">Hủy đăng ký</a></p>
+ </body></html>$$,
+ $${{event_name}}
+
+Xin chào {{first_name}},
+Chúng tôi trân trọng mời bạn tham dự {{event_name}}.
+
+Thời gian: {{event_time}}
+Địa điểm: {{event_location}}
+
+Đăng ký tham dự: {{registration_url}}
+Hủy đăng ký: {{unsubscribe_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Order Thank You',
+ 'Cảm ơn {{first_name}} đã đặt hàng #{{order_code}}',
+ 'Đơn hàng của bạn đã được ghi nhận.',
+ $$<html><body>
+  <h2>Cảm ơn bạn đã đặt hàng</h2>
+  <p>Xin chào <strong>{{first_name}}</strong>,</p>
+  <p>Đơn hàng <strong>#{{order_code}}</strong> đã được ghi nhận thành công.</p>
+  <p>Tổng giá trị: <strong>{{order_total}}</strong></p>
+  <p>Ngày giao dự kiến: {{estimated_delivery_date}}</p>
+  <p><a href="{{order_url}}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 16px;text-decoration:none;border-radius:6px;">Xem chi tiết đơn hàng</a></p>
+ </body></html>$$,
+ $$Cảm ơn bạn đã đặt hàng
+
+Xin chào {{first_name}},
+Đơn hàng #{{order_code}} đã được ghi nhận thành công.
+Tổng giá trị: {{order_total}}
+Ngày giao dự kiến: {{estimated_delivery_date}}
+
+Xem chi tiết đơn hàng: {{order_url}}$$,
+ 1, TRUE),
+
+(1,
+ 'Feedback Survey',
+ '{{first_name}}, chia sẻ cảm nhận của bạn với chúng tôi',
+ 'Mất chưa đến 2 phút để hoàn thành khảo sát.',
+ $$<html><body>
+  <h2>Ý kiến của bạn rất quan trọng</h2>
+  <p>Xin chào <strong>{{first_name}}</strong>,</p>
+  <p>Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi. Bạn có thể dành ít phút để đánh giá trải nghiệm không?</p>
+  <p><a href="{{survey_url}}" style="display:inline-block;background:#f59e0b;color:#111827;padding:10px 16px;text-decoration:none;border-radius:6px;">Gửi đánh giá</a></p>
+  <p>Phản hồi của bạn giúp chúng tôi cải thiện dịch vụ tốt hơn.</p>
+  <p style="font-size:11px;color:#999;"><a href="{{unsubscribe_url}}">Hủy đăng ký</a></p>
+ </body></html>$$,
+ $$Ý kiến của bạn rất quan trọng
+
+Xin chào {{first_name}},
+Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi. Bạn có thể dành ít phút để đánh giá trải nghiệm không?
+
+Gửi đánh giá: {{survey_url}}
+Hủy đăng ký: {{unsubscribe_url}}$$,
  1, TRUE);
 
 -- Quy tắc cá nhân hóa mẫu

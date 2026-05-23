@@ -20,6 +20,23 @@ const EMAIL_ACCOUNT_SEND_COLUMNS =
 const TEMPLATE_SEND_COLUMNS =
   "id, template_name, subject, preview_text, content_html, content_text, is_active";
 
+const getAccessibleTemplateOwnerIds = async (userId) => {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id")
+    .eq("role", "admin")
+    .eq("is_active", true);
+
+  throwIfError(error);
+
+  return [
+    ...new Set([
+      userId,
+      ...((data || []).map((row) => row.id).filter(Boolean)),
+    ]),
+  ];
+};
+
 const decorateCampaignRows = async (rows) => {
   if (!rows || rows.length === 0) {
     return [];
@@ -180,12 +197,14 @@ const listCampaignRecipients = async (
   };
 };
 
-const ensureTemplateExists = async (userId, templateId) => {
-  const { data, error } = await supabase
+const createCampaign = async (userId, payload) => {
+  const templateOwnerIds = await getAccessibleTemplateOwnerIds(userId);
+
+  const { data: templateCheck, error: templateError } = await supabase
     .from("email_templates")
     .select("id")
-    .eq("id", templateId)
-    .eq("user_id", userId)
+    .eq("id", payload.templateId)
+    .in("user_id", templateOwnerIds)
     .maybeSingle();
   throwIfError(error);
   if (!data) {
@@ -204,129 +223,20 @@ const ensureEmailAccountExists = async (userId, emailAccountId) => {
   if (!data) {
     throw new Error("EMAIL_ACCOUNT_NOT_FOUND");
   }
-};
-
-const ensureSegmentExists = async (userId, segmentId) => {
-  if (!segmentId) {
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("contact_segments")
-    .select("id")
-    .eq("id", segmentId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  throwIfError(error);
-  if (!data) {
-    throw new Error("SEGMENT_NOT_FOUND");
-  }
-};
-
-const getRecipientsForPayload = async (userId, payload) => {
-  const importedEmails = Array.isArray(payload.recipientEmails)
-    ? unique(payload.recipientEmails.map(normalizeEmail))
-    : [];
-
-  if (Array.isArray(payload.recipientEmails) && importedEmails.length === 0) {
-    return [];
-  }
-
-  if (importedEmails.length > 0) {
-    const { data: contacts, error: contactsError } = await supabase
-      .from("email_contacts")
-      .select("id, email")
-      .eq("user_id", userId)
-      .eq("email_status", "active")
-      .in("email", importedEmails);
-    throwIfError(contactsError);
-
-    const contactMap = new Map(
-      (contacts || []).map((row) => [normalizeEmail(row.email), row.id]),
-    );
-
-    return importedEmails.map((email) => ({
-      id: contactMap.get(email) || null,
-      email,
-    }));
-  }
 
   const segmentId = payload.segmentId || null;
   if (segmentId) {
-    const { data: segmentRows, error: segmentMapError } = await supabase
-      .from("contact_segment_map")
-      .select("contact_id")
-      .eq("segment_id", segmentId);
-    throwIfError(segmentMapError);
-
-    const contactIds = unique((segmentRows || []).map((row) => row.contact_id));
-    if (contactIds.length === 0) {
-      return [];
+    const { data: segmentCheck, error: segmentError } = await supabase
+      .from("contact_segments")
+      .select("id")
+      .eq("id", segmentId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    throwIfError(segmentError);
+    if (!segmentCheck) {
+      throw new Error("SEGMENT_NOT_FOUND");
     }
-
-    const { data: contactRows, error: contactRowsError } = await supabase
-      .from("email_contacts")
-      .select("id, email")
-      .eq("user_id", userId)
-      .eq("email_status", "active")
-      .in("id", contactIds);
-    throwIfError(contactRowsError);
-    return contactRows || [];
   }
-
-  if (Array.isArray(payload.contactIds) && payload.contactIds.length === 0) {
-    return [];
-  }
-
-  if (Array.isArray(payload.contactIds) && payload.contactIds.length > 0) {
-    const selectedIds = unique(payload.contactIds);
-    const { data: selectedRows, error: selectedRowsError } = await supabase
-      .from("email_contacts")
-      .select("id, email")
-      .eq("user_id", userId)
-      .eq("email_status", "active")
-      .in("id", selectedIds);
-    throwIfError(selectedRowsError);
-    return selectedRows || [];
-  }
-
-  const { data: allRows, error: allRowsError } = await supabase
-    .from("email_contacts")
-    .select("id, email")
-    .eq("user_id", userId)
-    .eq("email_status", "active");
-  throwIfError(allRowsError);
-  return allRows || [];
-};
-
-const replaceCampaignRecipients = async (campaignId, recipients) => {
-  const { error: deleteError } = await supabase
-    .from("campaign_recipients")
-    .delete()
-    .eq("campaign_id", campaignId);
-  throwIfError(deleteError);
-
-  if (recipients.length > 0) {
-    const recipientRows = recipients.map((row) => ({
-      campaign_id: campaignId,
-      contact_id: row.id || null,
-      email: normalizeEmail(row.email),
-      status: "pending",
-    }));
-
-    const { error: recipientsInsertError } = await supabase
-      .from("campaign_recipients")
-      .insert(recipientRows);
-    throwIfError(recipientsInsertError);
-  }
-};
-
-const createCampaign = async (userId, payload) => {
-  await ensureTemplateExists(userId, payload.templateId);
-  await ensureEmailAccountExists(userId, payload.emailAccountId);
-
-  const segmentId = payload.segmentId || null;
-  await ensureSegmentExists(userId, segmentId);
 
   const status = payload.scheduledTime ? "scheduled" : "draft";
 
@@ -354,8 +264,61 @@ const createCampaign = async (userId, payload) => {
     .maybeSingle();
   throwIfError(campaignInsertError);
 
-  const recipients = await getRecipientsForPayload(userId, payload);
-  await replaceCampaignRecipients(campaignData.id, recipients);
+  let recipients = [];
+  if (segmentId) {
+    const { data: segmentRows, error: segmentMapError } = await supabase
+      .from("contact_segment_map")
+      .select("contact_id")
+      .eq("segment_id", segmentId);
+    throwIfError(segmentMapError);
+
+    const contactIds = unique((segmentRows || []).map((row) => row.contact_id));
+    if (contactIds.length > 0) {
+      const { data: contactRows, error: contactRowsError } = await supabase
+        .from("email_contacts")
+        .select("id, email")
+        .eq("user_id", userId)
+        .eq("email_status", "active")
+        .in("id", contactIds);
+      throwIfError(contactRowsError);
+      recipients = contactRows || [];
+    }
+  } else if (
+    Array.isArray(payload.contactIds) &&
+    payload.contactIds.length > 0
+  ) {
+    const selectedIds = unique(payload.contactIds);
+    const { data: selectedRows, error: selectedRowsError } = await supabase
+      .from("email_contacts")
+      .select("id, email")
+      .eq("user_id", userId)
+      .eq("email_status", "active")
+      .in("id", selectedIds);
+    throwIfError(selectedRowsError);
+    recipients = selectedRows || [];
+  } else {
+    const { data: allRows, error: allRowsError } = await supabase
+      .from("email_contacts")
+      .select("id, email")
+      .eq("user_id", userId)
+      .eq("email_status", "active");
+    throwIfError(allRowsError);
+    recipients = allRows || [];
+  }
+
+  if (recipients.length > 0) {
+    const recipientRows = recipients.map((row) => ({
+      campaign_id: campaignData.id,
+      contact_id: row.id,
+      email: row.email,
+      status: "pending",
+    }));
+
+    const { error: recipientsInsertError } = await supabase
+      .from("campaign_recipients")
+      .insert(recipientRows);
+    throwIfError(recipientsInsertError);
+  }
 
   const { error: campaignUpdateError } = await supabase
     .from("campaigns")
@@ -517,6 +480,7 @@ const startCampaign = async (userId, campaignId) => {
   }
 
   const now = new Date().toISOString();
+  const templateOwnerIds = await getAccessibleTemplateOwnerIds(userId);
 
   const { error: markSendingError } = await supabase
     .from("campaigns")
@@ -536,7 +500,7 @@ const startCampaign = async (userId, campaignId) => {
       .from("email_templates")
       .select(TEMPLATE_SEND_COLUMNS)
       .eq("id", campaign.template_id)
-      .eq("user_id", userId)
+      .in("user_id", templateOwnerIds)
       .maybeSingle(),
     supabase
       .from("email_accounts")

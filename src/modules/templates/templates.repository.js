@@ -12,6 +12,23 @@ const throwIfError = (error) => {
   }
 };
 
+const getAccessibleTemplateOwnerIds = async (userId) => {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id")
+    .eq("role", "admin")
+    .eq("is_active", true);
+
+  throwIfError(error);
+
+  return [
+    ...new Set([
+      userId,
+      ...((data || []).map((row) => row.id).filter(Boolean)),
+    ]),
+  ];
+};
+
 const ensureTemplateOwnership = async (userId, templateId) => {
   const { data, error } = await supabase
     .from("email_templates")
@@ -26,11 +43,12 @@ const ensureTemplateOwnership = async (userId, templateId) => {
 
 const listTemplates = async (userId, { page, pageSize, isActive }) => {
   const offset = (page - 1) * pageSize;
+  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
 
   let builder = supabase
     .from("email_templates")
     .select(LIST_COLUMNS, { count: "exact" })
-    .eq("user_id", userId);
+    .in("user_id", ownerIds);
 
   if (isActive !== undefined) {
     builder = builder.eq("is_active", isActive);
@@ -49,11 +67,13 @@ const listTemplates = async (userId, { page, pageSize, isActive }) => {
 };
 
 const findTemplateById = async (userId, templateId) => {
+  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
+
   const { data, error } = await supabase
     .from("email_templates")
     .select(DETAIL_COLUMNS)
     .eq("id", templateId)
-    .eq("user_id", userId)
+    .in("user_id", ownerIds)
     .maybeSingle();
 
   throwIfError(error);
@@ -151,7 +171,17 @@ const deleteTemplate = async (userId, templateId) => {
 };
 
 const getTemplateDesigner = async (userId, templateId) => {
-  const template = await ensureTemplateOwnership(userId, templateId);
+  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
+
+  const { data: template, error: templateError } = await supabase
+    .from("email_templates")
+    .select("id, user_id, version")
+    .eq("id", templateId)
+    .in("user_id", ownerIds)
+    .maybeSingle();
+
+  throwIfError(templateError);
+
   if (!template) {
     return null;
   }
@@ -162,7 +192,7 @@ const getTemplateDesigner = async (userId, templateId) => {
       "template_id, layout_json, editor_state, rendered_html, rendered_text, draft_version, last_published_version, updated_at",
     )
     .eq("template_id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", template.user_id)
     .maybeSingle();
 
   throwIfError(error);
