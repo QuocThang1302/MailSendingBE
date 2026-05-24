@@ -22,7 +22,7 @@ const createTemplate = asyncHandler(async (req, res) => {
 
 const updateTemplate = asyncHandler(async (req, res) => {
   const data = await templatesService.updateTemplate(
-    req.user.id,
+    req.user,
     req.params.id,
     req.body,
   );
@@ -39,7 +39,7 @@ const getTemplateDesigner = asyncHandler(async (req, res) => {
 
 const saveTemplateDesigner = asyncHandler(async (req, res) => {
   const data = await templatesService.saveTemplateDesigner(
-    req.user.id,
+    req.user,
     req.params.id,
     req.body,
   );
@@ -48,7 +48,7 @@ const saveTemplateDesigner = asyncHandler(async (req, res) => {
 
 const publishTemplateDesigner = asyncHandler(async (req, res) => {
   const data = await templatesService.publishTemplateDesigner(
-    req.user.id,
+    req.user,
     req.params.id,
     req.body,
   );
@@ -57,7 +57,7 @@ const publishTemplateDesigner = asyncHandler(async (req, res) => {
 
 const listTemplateDesignerVersions = asyncHandler(async (req, res) => {
   const data = await templatesService.listTemplateDesignerVersions(
-    req.user.id,
+    req.user,
     req.params.id,
     req.query,
   );
@@ -66,7 +66,7 @@ const listTemplateDesignerVersions = asyncHandler(async (req, res) => {
 
 const getTemplateDesignerVersion = asyncHandler(async (req, res) => {
   const data = await templatesService.getTemplateDesignerVersion(
-    req.user.id,
+    req.user,
     req.params.id,
     req.params.versionId,
   );
@@ -75,7 +75,7 @@ const getTemplateDesignerVersion = asyncHandler(async (req, res) => {
 
 const restoreTemplateDesignerVersion = asyncHandler(async (req, res) => {
   const data = await templatesService.restoreTemplateDesignerVersion(
-    req.user.id,
+    req.user,
     req.params.id,
     req.params.versionId,
   );
@@ -84,7 +84,7 @@ const restoreTemplateDesignerVersion = asyncHandler(async (req, res) => {
 
 const deleteTemplate = asyncHandler(async (req, res) => {
   const data = await templatesService.deleteTemplate(
-    req.user.id,
+    req.user,
     req.params.id,
   );
   return sendOk(res, data, "Deleted template");

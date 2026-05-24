@@ -1,10 +1,11 @@
 const { supabase } = require("../../config/supabase");
 const { renderTemplateLayout } = require("./templateRenderer");
 
+const TEMPLATE_OWNER_FORBIDDEN = "TEMPLATE_OWNER_FORBIDDEN";
 const LIST_COLUMNS =
-  "id, template_name, subject, preview_text, version, is_active, created_at, updated_at";
+  "id, user_id, template_name, subject, preview_text, version, is_active, created_at, updated_at";
 const DETAIL_COLUMNS =
-  "id, template_name, subject, preview_text, content_html, content_text, version, is_active, created_at, updated_at";
+  "id, user_id, template_name, subject, preview_text, content_html, content_text, version, is_active, created_at, updated_at";
 
 const throwIfError = (error) => {
   if (error) {
@@ -12,43 +13,79 @@ const throwIfError = (error) => {
   }
 };
 
-const getAccessibleTemplateOwnerIds = async (userId) => {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id")
-    .eq("role", "admin")
-    .eq("is_active", true);
+const unique = (values) => [...new Set(values.filter(Boolean))];
+
+const decorateTemplateRows = async (rows) => {
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+
+  const ownerIds = unique(rows.map((row) => row.user_id));
+  const { data, error } =
+    ownerIds.length > 0
+      ? await supabase
+          .from("users")
+          .select("id, name, email")
+          .in("id", ownerIds)
+      : { data: [], error: null };
 
   throwIfError(error);
 
-  return [
-    ...new Set([
-      userId,
-      ...((data || []).map((row) => row.id).filter(Boolean)),
-    ]),
-  ];
+  const ownerMap = new Map((data || []).map((row) => [row.id, row]));
+
+  return rows.map((row) => ({
+    ...row,
+    created_by_user_id: row.user_id,
+    owner: ownerMap.get(row.user_id) || null,
+  }));
 };
 
-const ensureTemplateOwnership = async (userId, templateId) => {
+const decorateTemplateRow = async (row) => {
+  const [decorated] = await decorateTemplateRows(row ? [row] : []);
+  return decorated || null;
+};
+
+const findTemplateOwner = async (templateId) => {
   const { data, error } = await supabase
     .from("email_templates")
-    .select("id, version")
+    .select("id, user_id, version")
     .eq("id", templateId)
-    .eq("user_id", userId)
     .maybeSingle();
 
   throwIfError(error);
   return data || null;
 };
 
+const isAdmin = (actor) => String(actor?.role || "").toLowerCase() === "admin";
+
+const ensureTemplateOwnership = async (actor, templateId) => {
+  const template = await findTemplateOwner(templateId);
+  if (!template) {
+    return null;
+  }
+  if (Number(template.user_id) !== Number(actor?.id)) {
+    throw new Error(TEMPLATE_OWNER_FORBIDDEN);
+  }
+  return template;
+};
+
+const ensureTemplateDeleteAccess = async (actor, templateId) => {
+  const template = await findTemplateOwner(templateId);
+  if (!template) {
+    return null;
+  }
+  if (!isAdmin(actor) && Number(template.user_id) !== Number(actor?.id)) {
+    throw new Error(TEMPLATE_OWNER_FORBIDDEN);
+  }
+  return template;
+};
+
 const listTemplates = async (userId, { page, pageSize, isActive }) => {
   const offset = (page - 1) * pageSize;
-  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
 
   let builder = supabase
     .from("email_templates")
-    .select(LIST_COLUMNS, { count: "exact" })
-    .in("user_id", ownerIds);
+    .select(LIST_COLUMNS, { count: "exact" });
 
   if (isActive !== undefined) {
     builder = builder.eq("is_active", isActive);
@@ -62,22 +99,19 @@ const listTemplates = async (userId, { page, pageSize, isActive }) => {
 
   return {
     total: count || 0,
-    rows: data || [],
+    rows: await decorateTemplateRows(data || []),
   };
 };
 
 const findTemplateById = async (userId, templateId) => {
-  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
-
   const { data, error } = await supabase
     .from("email_templates")
     .select(DETAIL_COLUMNS)
     .eq("id", templateId)
-    .in("user_id", ownerIds)
     .maybeSingle();
 
   throwIfError(error);
-  return data || null;
+  return decorateTemplateRow(data);
 };
 
 const createTemplate = async (userId, payload) => {
@@ -97,10 +131,15 @@ const createTemplate = async (userId, payload) => {
     .maybeSingle();
 
   throwIfError(error);
-  return data;
+  return decorateTemplateRow(data);
 };
 
-const updateTemplate = async (userId, templateId, payload) => {
+const updateTemplate = async (actor, templateId, payload) => {
+  const current = await ensureTemplateOwnership(actor, templateId);
+  if (!current) {
+    return null;
+  }
+
   const fields = {
     template_name: payload.templateName,
     subject: payload.subject,
@@ -114,7 +153,7 @@ const updateTemplate = async (userId, templateId, payload) => {
     ([, value]) => value !== undefined,
   );
   if (entries.length === 0) {
-    return findTemplateById(userId, templateId);
+    return findTemplateById(actor?.id, templateId);
   }
 
   const updates = Object.fromEntries(entries);
@@ -129,18 +168,6 @@ const updateTemplate = async (userId, templateId, payload) => {
   ].some((column) => entries.some(([changed]) => changed === column));
 
   if (shouldIncreaseVersion) {
-    const { data: current, error: currentError } = await supabase
-      .from("email_templates")
-      .select("id, version")
-      .eq("id", templateId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    throwIfError(currentError);
-
-    if (!current) {
-      return null;
-    }
-
     updates.version = (current.version || 0) + 1;
   }
 
@@ -150,20 +177,25 @@ const updateTemplate = async (userId, templateId, payload) => {
     .from("email_templates")
     .update(updates)
     .eq("id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", current.user_id)
     .select(DETAIL_COLUMNS)
     .maybeSingle();
 
   throwIfError(error);
-  return data || null;
+  return decorateTemplateRow(data);
 };
 
-const deleteTemplate = async (userId, templateId) => {
+const deleteTemplate = async (actor, templateId) => {
+  const template = await ensureTemplateDeleteAccess(actor, templateId);
+  if (!template) {
+    return false;
+  }
+
   const { data, error } = await supabase
     .from("email_templates")
     .delete()
     .eq("id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", template.user_id)
     .select("id");
 
   throwIfError(error);
@@ -171,13 +203,10 @@ const deleteTemplate = async (userId, templateId) => {
 };
 
 const getTemplateDesigner = async (userId, templateId) => {
-  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
-
   const { data: template, error: templateError } = await supabase
     .from("email_templates")
     .select("id, user_id, version")
     .eq("id", templateId)
-    .in("user_id", ownerIds)
     .maybeSingle();
 
   throwIfError(templateError);
@@ -200,6 +229,7 @@ const getTemplateDesigner = async (userId, templateId) => {
   if (!data) {
     return {
       templateId,
+      createdByUserId: template.user_id,
       layout: {
         schemaVersion: 1,
         blocks: [],
@@ -215,6 +245,7 @@ const getTemplateDesigner = async (userId, templateId) => {
 
   return {
     templateId: data.template_id,
+    createdByUserId: template.user_id,
     layout: data.layout_json,
     editorState: data.editor_state,
     renderedHtml: data.rendered_html,
@@ -225,11 +256,12 @@ const getTemplateDesigner = async (userId, templateId) => {
   };
 };
 
-const saveTemplateDesigner = async (userId, templateId, payload) => {
-  const template = await ensureTemplateOwnership(userId, templateId);
+const saveTemplateDesigner = async (actor, templateId, payload) => {
+  const template = await ensureTemplateOwnership(actor, templateId);
   if (!template) {
     return null;
   }
+  const ownerId = template.user_id;
 
   let renderedHtml = payload.renderedHtml;
   let renderedText = payload.renderedText;
@@ -251,7 +283,7 @@ const saveTemplateDesigner = async (userId, templateId, payload) => {
     .upsert(
       {
         template_id: templateId,
-        user_id: userId,
+        user_id: ownerId,
         layout_json: payload.layout,
         editor_state: payload.editorState || null,
         rendered_html: renderedHtml || null,
@@ -279,11 +311,12 @@ const saveTemplateDesigner = async (userId, templateId, payload) => {
   };
 };
 
-const publishTemplateDesigner = async (userId, templateId, payload) => {
-  const template = await ensureTemplateOwnership(userId, templateId);
+const publishTemplateDesigner = async (actor, templateId, payload) => {
+  const template = await ensureTemplateOwnership(actor, templateId);
   if (!template) {
     return null;
   }
+  const ownerId = template.user_id;
 
   let layout = payload.layout || null;
   let editorState = payload.editorState || null;
@@ -296,7 +329,7 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
       "template_id, layout_json, editor_state, rendered_html, rendered_text, draft_version, last_published_version",
     )
     .eq("template_id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", ownerId)
     .maybeSingle();
   throwIfError(draftError);
 
@@ -336,7 +369,7 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
     .from("template_layout_versions")
     .select("version_number")
     .eq("template_id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", ownerId)
     .order("version_number", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -349,7 +382,7 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
     .from("template_layout_versions")
     .update({ is_published: false })
     .eq("template_id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", ownerId)
     .eq("is_published", true);
   throwIfError(unpublishError);
 
@@ -357,7 +390,7 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
     .from("template_layout_versions")
     .insert({
       template_id: templateId,
-      user_id: userId,
+      user_id: ownerId,
       version_number: nextVersion,
       layout_json: layout,
       editor_state: editorState,
@@ -377,7 +410,7 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
     .upsert(
       {
         template_id: templateId,
-        user_id: userId,
+        user_id: ownerId,
         layout_json: layout,
         editor_state: editorState,
         rendered_html: renderedHtml || null,
@@ -405,7 +438,7 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
     .from("email_templates")
     .update(templateUpdates)
     .eq("id", templateId)
-    .eq("user_id", userId);
+    .eq("user_id", ownerId);
   throwIfError(updateTemplateError);
 
   return {
@@ -422,11 +455,12 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
   };
 };
 
-const listTemplateDesignerVersions = async (userId, templateId, pagination) => {
-  const template = await ensureTemplateOwnership(userId, templateId);
+const listTemplateDesignerVersions = async (actor, templateId, pagination) => {
+  const template = await ensureTemplateOwnership(actor, templateId);
   if (!template) {
     return null;
   }
+  const ownerId = template.user_id;
 
   const page = pagination.page;
   const pageSize = pagination.pageSize;
@@ -438,7 +472,7 @@ const listTemplateDesignerVersions = async (userId, templateId, pagination) => {
       count: "exact",
     })
     .eq("template_id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", ownerId)
     .order("version_number", { ascending: false })
     .range(offset, offset + pageSize - 1);
   throwIfError(error);
@@ -457,11 +491,12 @@ const listTemplateDesignerVersions = async (userId, templateId, pagination) => {
   };
 };
 
-const getTemplateDesignerVersion = async (userId, templateId, versionId) => {
-  const template = await ensureTemplateOwnership(userId, templateId);
+const getTemplateDesignerVersion = async (actor, templateId, versionId) => {
+  const template = await ensureTemplateOwnership(actor, templateId);
   if (!template) {
     return null;
   }
+  const ownerId = template.user_id;
 
   const { data, error } = await supabase
     .from("template_layout_versions")
@@ -470,7 +505,7 @@ const getTemplateDesignerVersion = async (userId, templateId, versionId) => {
     )
     .eq("id", versionId)
     .eq("template_id", templateId)
-    .eq("user_id", userId)
+    .eq("user_id", ownerId)
     .maybeSingle();
   throwIfError(error);
 
@@ -493,18 +528,21 @@ const getTemplateDesignerVersion = async (userId, templateId, versionId) => {
 };
 
 const restoreTemplateDesignerVersion = async (
-  userId,
+  actor,
   templateId,
   versionId,
 ) => {
   const version = await getTemplateDesignerVersion(
-    userId,
+    actor,
     templateId,
     versionId,
   );
   if (!version) {
     return null;
   }
+
+  const template = await ensureTemplateOwnership(actor, templateId);
+  const ownerId = template.user_id;
 
   const now = new Date().toISOString();
 
@@ -513,7 +551,7 @@ const restoreTemplateDesignerVersion = async (
     .upsert(
       {
         template_id: templateId,
-        user_id: userId,
+        user_id: ownerId,
         layout_json: version.layout,
         editor_state: version.editorState,
         rendered_html: version.renderedHtml,
@@ -534,7 +572,7 @@ const restoreTemplateDesignerVersion = async (
       updated_at: now,
     })
     .eq("id", templateId)
-    .eq("user_id", userId);
+    .eq("user_id", ownerId);
   throwIfError(templateUpdateError);
 
   return {
@@ -546,6 +584,7 @@ const restoreTemplateDesignerVersion = async (
 };
 
 module.exports = {
+  TEMPLATE_OWNER_FORBIDDEN,
   listTemplates,
   findTemplateById,
   createTemplate,
