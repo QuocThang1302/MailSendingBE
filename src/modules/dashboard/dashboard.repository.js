@@ -6,23 +6,6 @@ const throwIfError = (error) => {
   }
 };
 
-const getAccessibleTemplateOwnerIds = async (userId) => {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id")
-    .eq("role", "admin")
-    .eq("is_active", true);
-
-  throwIfError(error);
-
-  return [
-    ...new Set([
-      userId,
-      ...((data || []).map((row) => row.id).filter(Boolean)),
-    ]),
-  ];
-};
-
 const countRows = async (table, userId, extraFilter = null) => {
   let builder = supabase
     .from(table)
@@ -38,13 +21,10 @@ const countRows = async (table, userId, extraFilter = null) => {
   return count || 0;
 };
 
-const countAccessibleTemplates = async (userId) => {
-  const ownerIds = await getAccessibleTemplateOwnerIds(userId);
-
+const countAccessibleTemplates = async () => {
   const { count, error } = await supabase
     .from("email_templates")
     .select("id", { count: "exact", head: true })
-    .in("user_id", ownerIds)
     .eq("is_active", true);
 
   throwIfError(error);
@@ -80,7 +60,7 @@ const getOverview = async (userId) => {
     countRows("email_contacts", userId, (builder) =>
       builder.eq("email_status", "active"),
     ),
-    countAccessibleTemplates(userId),
+    countAccessibleTemplates(),
     countRows("campaigns", userId),
     sumCampaignField(userId, "sent_count"),
     sumCampaignField(userId, "open_count"),
