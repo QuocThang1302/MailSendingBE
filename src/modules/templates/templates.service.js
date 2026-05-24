@@ -1,6 +1,15 @@
 const ApiError = require("../../common/ApiError");
 const templatesRepository = require("./templates.repository");
 
+const OWNER_ERROR_MESSAGE = "Only the template owner can modify this template";
+
+const rethrowTemplateOwnershipError = (error) => {
+  if (error.message === templatesRepository.TEMPLATE_OWNER_FORBIDDEN) {
+    throw new ApiError(403, OWNER_ERROR_MESSAGE);
+  }
+  throw error;
+};
+
 const listTemplates = async (userId, query) => {
   const page = query.page || 1;
   const pageSize = query.pageSize || 20;
@@ -37,20 +46,30 @@ const createTemplate = async (userId, payload) => {
   return templatesRepository.createTemplate(userId, payload);
 };
 
-const updateTemplate = async (userId, templateId, payload) => {
-  const updated = await templatesRepository.updateTemplate(
-    userId,
-    templateId,
-    payload,
-  );
+const updateTemplate = async (actor, templateId, payload) => {
+  let updated;
+  try {
+    updated = await templatesRepository.updateTemplate(
+      actor,
+      templateId,
+      payload,
+    );
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
   if (!updated) {
     throw new ApiError(404, "Template not found");
   }
   return updated;
 };
 
-const deleteTemplate = async (userId, templateId) => {
-  const removed = await templatesRepository.deleteTemplate(userId, templateId);
+const deleteTemplate = async (actor, templateId) => {
+  let removed;
+  try {
+    removed = await templatesRepository.deleteTemplate(actor, templateId);
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
   if (!removed) {
     throw new ApiError(404, "Template not found");
   }
@@ -68,22 +87,27 @@ const getTemplateDesigner = async (userId, templateId) => {
   return draft;
 };
 
-const saveTemplateDesigner = async (userId, templateId, payload) => {
-  const saved = await templatesRepository.saveTemplateDesigner(
-    userId,
-    templateId,
-    payload,
-  );
+const saveTemplateDesigner = async (actor, templateId, payload) => {
+  let saved;
+  try {
+    saved = await templatesRepository.saveTemplateDesigner(
+      actor,
+      templateId,
+      payload,
+    );
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
   if (!saved) {
     throw new ApiError(404, "Template not found");
   }
   return saved;
 };
 
-const publishTemplateDesigner = async (userId, templateId, payload) => {
+const publishTemplateDesigner = async (actor, templateId, payload) => {
   try {
     const published = await templatesRepository.publishTemplateDesigner(
-      userId,
+      actor,
       templateId,
       payload,
     );
@@ -95,19 +119,24 @@ const publishTemplateDesigner = async (userId, templateId, payload) => {
     if (error.message === "DESIGNER_LAYOUT_REQUIRED") {
       throw new ApiError(400, "Designer layout is required to publish");
     }
-    throw error;
+    rethrowTemplateOwnershipError(error);
   }
 };
 
-const listTemplateDesignerVersions = async (userId, templateId, query) => {
+const listTemplateDesignerVersions = async (actor, templateId, query) => {
   const page = query.page || 1;
   const pageSize = query.pageSize || 20;
 
-  const result = await templatesRepository.listTemplateDesignerVersions(
-    userId,
-    templateId,
-    { page, pageSize },
-  );
+  let result;
+  try {
+    result = await templatesRepository.listTemplateDesignerVersions(
+      actor,
+      templateId,
+      { page, pageSize },
+    );
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
 
   if (!result) {
     throw new ApiError(404, "Template not found");
@@ -124,12 +153,17 @@ const listTemplateDesignerVersions = async (userId, templateId, query) => {
   };
 };
 
-const getTemplateDesignerVersion = async (userId, templateId, versionId) => {
-  const version = await templatesRepository.getTemplateDesignerVersion(
-    userId,
-    templateId,
-    versionId,
-  );
+const getTemplateDesignerVersion = async (actor, templateId, versionId) => {
+  let version;
+  try {
+    version = await templatesRepository.getTemplateDesignerVersion(
+      actor,
+      templateId,
+      versionId,
+    );
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
   if (!version) {
     throw new ApiError(404, "Template version not found");
   }
@@ -137,15 +171,20 @@ const getTemplateDesignerVersion = async (userId, templateId, versionId) => {
 };
 
 const restoreTemplateDesignerVersion = async (
-  userId,
+  actor,
   templateId,
   versionId,
 ) => {
-  const restored = await templatesRepository.restoreTemplateDesignerVersion(
-    userId,
-    templateId,
-    versionId,
-  );
+  let restored;
+  try {
+    restored = await templatesRepository.restoreTemplateDesignerVersion(
+      actor,
+      templateId,
+      versionId,
+    );
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
   if (!restored) {
     throw new ApiError(404, "Template version not found");
   }
