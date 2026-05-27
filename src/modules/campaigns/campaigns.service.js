@@ -135,6 +135,18 @@ const listCampaignRecipients = async (userId, campaignId, query) => {
   };
 };
 
+const getCampaignRecipientById = async (userId, campaignId, recipientId) => {
+  const recipient = await campaignsRepository.findCampaignRecipientById(
+    userId,
+    campaignId,
+    recipientId,
+  );
+  if (!recipient) {
+    throw new ApiError(404, "Sent email not found");
+  }
+  return recipient;
+};
+
 const createCampaign = async (userId, payload) => {
   try {
     return await campaignsRepository.createCampaign(userId, payload);
@@ -238,6 +250,7 @@ module.exports = {
   listCampaigns,
   getCampaignById,
   listCampaignRecipients,
+  getCampaignRecipientById,
   createCampaign,
   updateCampaign,
   importRecipients,

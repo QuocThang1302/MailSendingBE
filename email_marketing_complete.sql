@@ -434,6 +434,7 @@ CREATE TABLE individual_emails (
     id               SERIAL PRIMARY KEY,
     user_id          INT REFERENCES users(id) ON DELETE CASCADE,
     contact_id       INT REFERENCES email_contacts(id),
+    email            VARCHAR(150) NOT NULL,
     email_account_id INT REFERENCES email_accounts(id),
     subject          VARCHAR(255),
     content_html     TEXT,
@@ -442,9 +443,17 @@ CREATE TABLE individual_emails (
     status           VARCHAR(50) DEFAULT 'draft',
     sent_time        TIMESTAMP,
     open_time        TIMESTAMP,
+    click_time       TIMESTAMP,
+    open_count       INT DEFAULT 0,
+    click_count      INT DEFAULT 0,
     error_message    TEXT,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE email_tracking
+    ADD COLUMN individual_email_id INT REFERENCES individual_emails(id) ON DELETE CASCADE;
+
+CREATE INDEX idx_tracking_individual_email ON email_tracking(individual_email_id);
 
 
 -- =========================================

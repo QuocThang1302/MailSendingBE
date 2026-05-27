@@ -24,6 +24,15 @@ const listCampaignRecipients = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Fetched campaign recipients");
 });
 
+const getCampaignRecipientById = asyncHandler(async (req, res) => {
+  const data = await campaignsService.getCampaignRecipientById(
+    req.user.id,
+    req.params.id,
+    req.params.recipientId,
+  );
+  return sendOk(res, data, "Fetched sent email detail");
+});
+
 const createCampaign = asyncHandler(async (req, res) => {
   const data = await campaignsService.createCampaign(req.user.id, req.body);
   return sendOk(res, data, "Created campaign", 201);
@@ -59,6 +68,7 @@ module.exports = {
   listCampaigns,
   getCampaignById,
   listCampaignRecipients,
+  getCampaignRecipientById,
   createCampaign,
   updateCampaign,
   importRecipients,

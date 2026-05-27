@@ -18,6 +18,10 @@ const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+const recipientParamSchema = idParamSchema.extend({
+  recipientId: z.coerce.number().int().positive(),
+});
+
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
@@ -77,6 +81,11 @@ router.get(
   "/:id/recipients",
   validate({ params: idParamSchema, query: listQuerySchema }),
   campaignsController.listCampaignRecipients,
+);
+router.get(
+  "/:id/recipients/:recipientId",
+  validate({ params: recipientParamSchema }),
+  campaignsController.getCampaignRecipientById,
 );
 router.post(
   "/:id/start",
