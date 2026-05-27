@@ -10,6 +10,8 @@ const throwIfError = (error) => {
 };
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const INDIVIDUAL_EMAIL_COLUMNS =
+  "id, contact_id, email, email_account_id, subject, content_html, content_text, status, sent_time, open_time, click_time, open_count, click_count, error_message, created_at";
 
 const getSendingAccount = async (userId, emailAccountId) => {
   let builder = supabase
@@ -60,6 +62,70 @@ const insertEmailLogs = async (rows) => {
   throwIfError(error);
 };
 
+const createIndividualEmail = async (userId, row) => {
+  const { data, error } = await supabase
+    .from("individual_emails")
+    .insert({
+      user_id: userId,
+      contact_id: row.contactId || null,
+      email: normalizeEmail(row.email),
+      email_account_id: row.emailAccountId,
+      subject: row.subject,
+      content_html: row.contentHtml,
+      content_text: row.contentText,
+      status: "draft",
+    })
+    .select("id")
+    .maybeSingle();
+  throwIfError(error);
+  return data;
+};
+
+const updateIndividualEmailResult = async (userId, emailId, updates) => {
+  const { error } = await supabase
+    .from("individual_emails")
+    .update(updates)
+    .eq("id", emailId)
+    .eq("user_id", userId);
+  throwIfError(error);
+};
+
+const listIndividualEmails = async (userId, { page, pageSize }) => {
+  const offset = (page - 1) * pageSize;
+  const { data, count, error } = await supabase
+    .from("individual_emails")
+    .select(INDIVIDUAL_EMAIL_COLUMNS, { count: "exact" })
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+  throwIfError(error);
+
+  return { total: count || 0, rows: data || [] };
+};
+
+const findIndividualEmailById = async (userId, emailId) => {
+  const { data, error } = await supabase
+    .from("individual_emails")
+    .select(INDIVIDUAL_EMAIL_COLUMNS)
+    .eq("id", emailId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  throwIfError(error);
+  if (!data) {
+    return null;
+  }
+
+  const { data: events, error: eventsError } = await supabase
+    .from("email_tracking")
+    .select("id, event_type, clicked_url, ip_address, user_agent, event_time")
+    .eq("individual_email_id", emailId)
+    .order("event_time", { ascending: false })
+    .limit(100);
+  throwIfError(eventsError);
+
+  return { ...data, trackingEvents: events || [] };
+};
+
 const incrementAccountUsage = async (userId, accountId, successCount) => {
   if (!accountId || successCount <= 0) {
     return null;
@@ -100,5 +166,9 @@ module.exports = {
   getSendingAccount,
   findContactsForEmails,
   insertEmailLogs,
+  createIndividualEmail,
+  updateIndividualEmailResult,
+  listIndividualEmails,
+  findIndividualEmailById,
   incrementAccountUsage,
 };

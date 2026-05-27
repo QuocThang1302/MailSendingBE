@@ -540,6 +540,57 @@ const createTag = async (userId, { tagName, color }) => {
   return data;
 };
 
+const updateTag = async (userId, tagId, { tagName, color }) => {
+  const updates = {};
+  if (tagName !== undefined) {
+    updates.tag_name = tagName;
+  }
+  if (color !== undefined) {
+    updates.color = color;
+  }
+
+  const { data, error } = await supabase
+    .from("contact_tags")
+    .update(updates)
+    .eq("id", tagId)
+    .eq("user_id", userId)
+    .select("id, tag_name, color, created_at")
+    .maybeSingle();
+
+  throwIfError(error);
+  return data || null;
+};
+
+const deleteTag = async (userId, tagId) => {
+  const { data: ownedTag, error: ownedTagError } = await supabase
+    .from("contact_tags")
+    .select("id")
+    .eq("id", tagId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  throwIfError(ownedTagError);
+
+  if (!ownedTag) {
+    return false;
+  }
+
+  const { error: mapDeleteError } = await supabase
+    .from("contact_tag_map")
+    .delete()
+    .eq("tag_id", tagId);
+  throwIfError(mapDeleteError);
+
+  const { data, error } = await supabase
+    .from("contact_tags")
+    .delete()
+    .eq("id", tagId)
+    .eq("user_id", userId)
+    .select("id");
+
+  throwIfError(error);
+  return Array.isArray(data) && data.length > 0;
+};
+
 const getContactTags = async (contactId) => {
   const { data: mappings, error: mapError } = await supabase
     .from("contact_tag_map")
@@ -648,6 +699,8 @@ module.exports = {
   deleteContact,
   listTags,
   createTag,
+  updateTag,
+  deleteTag,
   listDynamicFields,
   createDynamicField,
   updateDynamicField,

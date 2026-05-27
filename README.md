@@ -58,7 +58,13 @@ psql -f src/scripts/sql/20260330_add_template_designer_tables.sql
 psql -f src/scripts/sql/20260331_add_campaign_scheduler_queue.sql
 ```
 
-6. Start in development mode:
+6. Run individual email tracking migration:
+
+```bash
+psql -f src/scripts/sql/20260527_add_individual_email_tracking.sql
+```
+
+7. Start in development mode:
 
 ```bash
 npm run dev
@@ -79,6 +85,15 @@ SMTP sending:
 - Required fields for an active sending account: `email_address`, `smtp_host`, `smtp_port`, optional `smtp_username`, `smtp_password`, `use_tls`.
 - `POST /campaigns/:id/start` now sends real emails, stores rendered content per recipient, and records SMTP failures in `campaign_recipients.error_message` / `email_logs`.
 - `POST /email-accounts/:id/test` sends a test email using that account. Body supports `toEmail`, `subject`, `message`.
+
+Email tracking:
+
+- Set `PUBLIC_BASE_URL` to the publicly reachable backend URL before sending campaigns.
+- Set a private `TRACKING_SECRET` used to sign per-recipient tracking links.
+- Campaign HTML includes an open pixel and tracked redirect links for external URLs.
+- `{{unsubscribe_url}}` renders a confirmation-based unsubscribe link.
+- Public endpoints are `GET /tracking/open/:token.gif`, `GET /tracking/click/:token`, and `GET/POST /tracking/unsubscribe/:token`.
+- Individual emails sent after the tracking migration store delivered HTML snapshots and tracking activity.
 
 AI media generation for email:
 
@@ -133,9 +148,14 @@ Designer notes:
 - `GET/POST/PATCH/DELETE /email-accounts`
 - `POST /email-accounts/:id/default`
 - `POST /email-accounts/:id/test`
+- `GET /individual-emails`
+- `GET /individual-emails/:id` (sent HTML snapshot and tracking events)
+- `POST /individual-emails/send`
+- `POST /individual-emails/preview`
 - `GET/POST /campaigns`
 - `GET /campaigns/:id`
 - `GET /campaigns/:id/recipients`
+- `GET /campaigns/:id/recipients/:recipientId` (sent HTML snapshot and tracking events)
 - `POST /campaigns/:id/start`
 - `POST /campaigns/:id/pause`
 - `GET /dashboard/overview`
@@ -150,6 +170,8 @@ AI media examples:
 Provider env example:
 
 ```env
+PUBLIC_BASE_URL=https://api.example.com
+TRACKING_SECRET=change_me_for_public_email_tracking
 AI_MEDIA_PROVIDER=pollinations
 POLLINATIONS_API_KEY=your_pollinations_api_key
 POLLINATIONS_BASE_URL=https://gen.pollinations.ai

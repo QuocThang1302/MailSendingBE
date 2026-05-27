@@ -19,8 +19,23 @@ const sendEmails = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Emails sent");
 });
 
+const listEmails = asyncHandler(async (req, res) => {
+  const data = await individualEmailsService.listEmails(req.user.id, req.query);
+  return sendOk(res, data, "Fetched individual emails");
+});
+
+const getEmailById = asyncHandler(async (req, res) => {
+  const data = await individualEmailsService.getEmailById(
+    req.user.id,
+    req.params.id,
+  );
+  return sendOk(res, data, "Fetched individual email detail");
+});
+
 module.exports = {
   sendPreview,
   importRecipients,
   sendEmails,
+  listEmails,
+  getEmailById,
 };

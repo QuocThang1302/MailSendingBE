@@ -24,9 +24,34 @@ const listCampaignRecipients = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Fetched campaign recipients");
 });
 
+const getCampaignRecipientById = asyncHandler(async (req, res) => {
+  const data = await campaignsService.getCampaignRecipientById(
+    req.user.id,
+    req.params.id,
+    req.params.recipientId,
+  );
+  return sendOk(res, data, "Fetched sent email detail");
+});
+
 const createCampaign = asyncHandler(async (req, res) => {
   const data = await campaignsService.createCampaign(req.user.id, req.body);
   return sendOk(res, data, "Created campaign", 201);
+});
+
+const updateCampaign = asyncHandler(async (req, res) => {
+  const data = await campaignsService.updateCampaign(
+    req.user.id,
+    req.params.id,
+    req.body,
+  );
+  return sendOk(res, data, "Updated campaign");
+});
+
+const importRecipients = asyncHandler(async (req, res) => {
+  const data = await campaignsService.importRecipients(req.user.id, {
+    file: req.file,
+  });
+  return sendOk(res, data, "Imported campaign recipients");
 });
 
 const startCampaign = asyncHandler(async (req, res) => {
@@ -43,7 +68,10 @@ module.exports = {
   listCampaigns,
   getCampaignById,
   listCampaignRecipients,
+  getCampaignRecipientById,
   createCampaign,
+  updateCampaign,
+  importRecipients,
   startCampaign,
   pauseCampaign,
 };

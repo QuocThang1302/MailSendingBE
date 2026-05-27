@@ -29,6 +29,10 @@ const env = {
   supabaseKey: process.env.SUPABASE_KEY || "",
   jwtSecret: process.env.JWT_SECRET || "change_me_in_production",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+  trackingSecret:
+    process.env.TRACKING_SECRET ||
+    process.env.JWT_SECRET ||
+    "change_me_in_production",
   bcryptSaltRounds: toInt(process.env.BCRYPT_SALT_ROUNDS, 10),
   schedulerEnabled: toBool(process.env.SCHEDULER_ENABLED, true),
   schedulerIntervalMs: toInt(process.env.SCHEDULER_INTERVAL_MS, 15000),

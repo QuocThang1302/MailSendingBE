@@ -29,8 +29,27 @@ const sendSchema = sendBaseSchema.extend({
   recipients: z.array(z.string().email().max(150)).min(1).max(200),
 });
 
+const listQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
+const idParamSchema = z.object({
+  id: z.coerce.number().int().positive(),
+});
+
 router.use(auth);
 
+router.get(
+  "/",
+  validate({ query: listQuerySchema }),
+  individualEmailsController.listEmails,
+);
+router.get(
+  "/:id",
+  validate({ params: idParamSchema }),
+  individualEmailsController.getEmailById,
+);
 router.post(
   "/import-recipients",
   upload.single("file"),

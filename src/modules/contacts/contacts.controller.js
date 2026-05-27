@@ -61,6 +61,20 @@ const createTag = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Created tag", 201);
 });
 
+const updateTag = asyncHandler(async (req, res) => {
+  const data = await contactsService.updateTag(
+    req.user.id,
+    req.params.tagId,
+    req.body,
+  );
+  return sendOk(res, data, "Updated tag");
+});
+
+const deleteTag = asyncHandler(async (req, res) => {
+  const data = await contactsService.deleteTag(req.user.id, req.params.tagId);
+  return sendOk(res, data, "Deleted tag");
+});
+
 const listTagRecipients = asyncHandler(async (req, res) => {
   const data = await contactsService.listTagRecipients(
     req.user.id,
@@ -132,6 +146,8 @@ module.exports = {
   deleteContact,
   listTags,
   createTag,
+  updateTag,
+  deleteTag,
   listTagRecipients,
   listDynamicFields,
   createDynamicField,
