@@ -22,6 +22,11 @@ const toBool = (value, fallback) => {
   return fallback;
 };
 
+const toChoice = (value, choices, fallback) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return choices.includes(normalized) ? normalized : fallback;
+};
+
 const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: toInt(process.env.PORT, 5000),
@@ -49,6 +54,23 @@ const env = {
   pollinationsVideoModel: process.env.POLLINATIONS_VIDEO_MODEL || "",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
   mediaPublicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL || "",
+  emailOpenTrackingEnabled: toBool(
+    process.env.EMAIL_OPEN_TRACKING_ENABLED,
+    false,
+  ),
+  emailClickTrackingMode: toChoice(
+    process.env.EMAIL_CLICK_TRACKING_MODE,
+    ["none", "marked", "all"],
+    "marked",
+  ),
+  emailTrackingRequireHttps: toBool(
+    process.env.EMAIL_TRACKING_REQUIRE_HTTPS,
+    true,
+  ),
+  emailAppendUnsubscribeFooter: toBool(
+    process.env.EMAIL_APPEND_UNSUBSCRIBE_FOOTER,
+    true,
+  ),
 };
 
 if (!env.supabaseUrl) {

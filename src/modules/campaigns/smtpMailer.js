@@ -1,5 +1,11 @@
 const nodemailer = require("nodemailer");
 const { buildTrackingUrl } = require("../tracking/trackingToken");
+const {
+  buildListUnsubscribeHeaders,
+  ensureVisibleUnsubscribe,
+  injectTrackingPixel,
+  rewriteTrackedLinks,
+} = require("../tracking/emailDelivery");
 
 const transporterCache = new Map();
 
@@ -82,53 +88,6 @@ const injectPreviewText = (html, previewText) => {
   }
 
   return `${hiddenPreview}${html}`;
-};
-
-const decodeHref = (value) => {
-  return String(value)
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-};
-
-const rewriteTrackedLinks = (html, recipientId, unsubscribeUrl) => {
-  if (!recipientId || !html) {
-    return html;
-  }
-
-  return String(html).replace(
-    /(<a\b[^>]*\bhref\s*=\s*)(["'])([^"']+)\2/gi,
-    (match, prefix, quote, rawUrl) => {
-      const targetUrl = decodeHref(rawUrl).trim();
-      if (
-        !/^https?:\/\//i.test(targetUrl) ||
-        targetUrl === unsubscribeUrl
-      ) {
-        return match;
-      }
-
-      const trackedUrl = buildTrackingUrl("click", recipientId, {
-        url: targetUrl,
-      });
-      return trackedUrl ? `${prefix}${quote}${trackedUrl}${quote}` : match;
-    },
-  );
-};
-
-const injectTrackingPixel = (html, recipientId) => {
-  const pixelUrl = buildTrackingUrl("open", recipientId);
-  if (!pixelUrl || !html) {
-    return html;
-  }
-
-  const pixel =
-    `<img src="${pixelUrl}" width="1" height="1" alt="" ` +
-    'style="display:none;width:1px;height:1px;border:0;" />';
-
-  if (/<\/body>/i.test(html)) {
-    return html.replace(/<\/body>/i, `${pixel}</body>`);
-  }
-  return `${html}${pixel}`;
 };
 
 const buildTransporterConfig = (account) => {
@@ -235,13 +194,29 @@ const sendCampaignEmail = async ({
       unsubscribe_url: unsubscribeUrl || "",
     },
   });
+  const htmlWithTrackedLinks = rewriteTrackedLinks({
+    html: baseRendered.html,
+    entityId: recipientId,
+    unsubscribeUrl,
+    buildClickUrl: (id, targetUrl) =>
+      buildTrackingUrl("click", id, { url: targetUrl }),
+  });
+  const htmlWithOpenPixel = injectTrackingPixel({
+    html: htmlWithTrackedLinks,
+    entityId: recipientId,
+    buildOpenUrl: (id) => buildTrackingUrl("open", id),
+  });
+  const deliveredContent = ensureVisibleUnsubscribe({
+    html: htmlWithOpenPixel,
+    text: baseRendered.text,
+    unsubscribeUrl,
+  });
   const rendered = {
     ...baseRendered,
-    html: injectTrackingPixel(
-      rewriteTrackedLinks(baseRendered.html, recipientId, unsubscribeUrl),
-      recipientId,
-    ),
+    html: deliveredContent.html,
+    text: deliveredContent.text,
   };
+  const unsubscribeHeaders = buildListUnsubscribeHeaders(unsubscribeUrl);
 
   const info = await transporter.sendMail({
     from: buildFromAddress(account),
@@ -249,13 +224,8 @@ const sendCampaignEmail = async ({
     subject: rendered.subject || "(No subject)",
     html: rendered.html,
     text: rendered.text,
-    ...(unsubscribeUrl
-      ? {
-          headers: {
-            "List-Unsubscribe": `<${unsubscribeUrl}>`,
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-          },
-        }
+    ...(Object.keys(unsubscribeHeaders).length
+      ? { headers: unsubscribeHeaders }
       : {}),
   });
 

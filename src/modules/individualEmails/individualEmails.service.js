@@ -4,6 +4,12 @@ const nodemailer = require("nodemailer");
 const ApiError = require("../../common/ApiError");
 const individualEmailsRepository = require("./individualEmails.repository");
 const { buildIndividualTrackingUrl } = require("../tracking/trackingToken");
+const {
+  buildListUnsubscribeHeaders,
+  ensureVisibleUnsubscribe,
+  injectTrackingPixel,
+  rewriteTrackedLinks,
+} = require("../tracking/emailDelivery");
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -70,43 +76,6 @@ const applyMergeTags = (template, context) =>
     .replace(/\{\{\s*amount\s*\}\}/gi, context.amount)
     .replace(/\{\{\s*orderId\s*\}\}/gi, context.orderId)
     .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, context.unsubscribeUrl || "");
-
-const decodeHref = (value) =>
-  String(value)
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-
-const rewriteTrackedLinks = (html, individualEmailId, unsubscribeUrl) => {
-  return String(html || "").replace(
-    /(<a\b[^>]*\bhref\s*=\s*)(["'])([^"']+)\2/gi,
-    (match, prefix, quote, rawUrl) => {
-      const targetUrl = decodeHref(rawUrl).trim();
-      if (!/^https?:\/\//i.test(targetUrl) || targetUrl === unsubscribeUrl) {
-        return match;
-      }
-
-      const trackedUrl = buildIndividualTrackingUrl("click", individualEmailId, {
-        url: targetUrl,
-      });
-      return trackedUrl ? `${prefix}${quote}${trackedUrl}${quote}` : match;
-    },
-  );
-};
-
-const injectTrackingPixel = (html, individualEmailId) => {
-  const pixelUrl = buildIndividualTrackingUrl("open", individualEmailId);
-  if (!pixelUrl) {
-    return html;
-  }
-
-  const pixel =
-    `<img src="${pixelUrl}" width="1" height="1" alt="" ` +
-    'style="display:none;width:1px;height:1px;border:0;" />';
-  return /<\/body>/i.test(html)
-    ? String(html).replace(/<\/body>/i, `${pixel}</body>`)
-    : `${html}${pixel}`;
-};
 
 const clampQrSize = (value) => {
   const size = Number.parseInt(value, 10);
@@ -337,30 +306,37 @@ const sendBatch = async (userId, payload, mode) => {
         unsubscribeUrl: unsubscribeUrl || "",
       };
       renderedText = applyMergeTags(payload.content, deliveryContext);
-      renderedHtml = injectTrackingPixel(
-        rewriteTrackedLinks(
-          resolveQrImages(applyMergeTags(defaultHtml, deliveryContext)),
-          emailRecord.id,
-          unsubscribeUrl,
-        ),
-        emailRecord.id,
-      );
+      const htmlWithTrackedLinks = rewriteTrackedLinks({
+        html: resolveQrImages(applyMergeTags(defaultHtml, deliveryContext)),
+        entityId: emailRecord.id,
+        unsubscribeUrl,
+        buildClickUrl: (id, targetUrl) =>
+          buildIndividualTrackingUrl("click", id, { url: targetUrl }),
+      });
+      const htmlWithOpenPixel = injectTrackingPixel({
+        html: htmlWithTrackedLinks,
+        entityId: emailRecord.id,
+        buildOpenUrl: (id) => buildIndividualTrackingUrl("open", id),
+      });
+      const deliveredContent = ensureVisibleUnsubscribe({
+        html: htmlWithOpenPixel,
+        text: renderedText,
+        unsubscribeUrl,
+      });
+      renderedText = deliveredContent.text;
+      renderedHtml = deliveredContent.html;
     }
 
     try {
+      const unsubscribeHeaders = buildListUnsubscribeHeaders(unsubscribeUrl);
       const info = await transporter.sendMail({
         from: fromHeader,
         to: email,
         subject: renderedSubject,
         text: renderedText,
         html: renderedHtml,
-        ...(unsubscribeUrl
-          ? {
-              headers: {
-                "List-Unsubscribe": `<${unsubscribeUrl}>`,
-                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-              },
-            }
+        ...(Object.keys(unsubscribeHeaders).length
+          ? { headers: unsubscribeHeaders }
           : {}),
       });
 
