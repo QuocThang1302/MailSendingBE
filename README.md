@@ -88,9 +88,12 @@ SMTP sending:
 
 Email tracking:
 
-- Set `PUBLIC_BASE_URL` to the publicly reachable backend URL before sending campaigns.
+- Set `PUBLIC_BASE_URL` to the publicly reachable backend URL before sending campaigns. For real email delivery, use an HTTPS branded domain such as `https://track.example.com`, not localhost, raw IP, or temporary tunnel domains.
 - Set a private `TRACKING_SECRET` used to sign per-recipient tracking links.
-- Campaign HTML includes an open pixel and tracked redirect links for external URLs.
+- `EMAIL_TRACKING_REQUIRE_HTTPS=true` prevents tracking URLs from being generated when `PUBLIC_BASE_URL` is not HTTPS.
+- `EMAIL_OPEN_TRACKING_ENABLED=false` disables the 1x1 open pixel by default. Set it to `true` only after your sending domain, tracking domain, SPF, DKIM, and DMARC are configured.
+- `EMAIL_CLICK_TRACKING_MODE=marked` only rewrites links that are explicitly marked with `data-track-click="true"` or `data-mail-track-click="true"`. Use `none` to disable click tracking, or `all` to rewrite every external link.
+- `EMAIL_APPEND_UNSUBSCRIBE_FOOTER=true` appends a visible unsubscribe footer when the template does not already include `{{unsubscribe_url}}`.
 - `{{unsubscribe_url}}` renders a confirmation-based unsubscribe link.
 - Public endpoints are `GET /tracking/open/:token.gif`, `GET /tracking/click/:token`, and `GET/POST /tracking/unsubscribe/:token`.
 - Individual emails sent after the tracking migration store delivered HTML snapshots and tracking activity.

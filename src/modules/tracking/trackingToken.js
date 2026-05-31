@@ -3,6 +3,13 @@ const env = require("../../config/env");
 
 const getTrackingBaseUrl = () => {
   const publicBaseUrl = String(env.publicBaseUrl || "").replace(/\/+$/, "");
+  if (
+    publicBaseUrl &&
+    env.emailTrackingRequireHttps &&
+    !/^https:\/\//i.test(publicBaseUrl)
+  ) {
+    return null;
+  }
   return publicBaseUrl ? `${publicBaseUrl}/api/v1/tracking` : null;
 };
 
