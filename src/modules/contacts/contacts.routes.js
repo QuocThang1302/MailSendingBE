@@ -78,6 +78,13 @@ const createTagSchema = z.object({
     .optional(),
 });
 
+const updateTagSchema = createTagSchema.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  {
+    message: "At least one field must be provided",
+  },
+);
+
 const replaceTagsSchema = z.object({
   tagIds: z.array(z.number().int().positive()).max(100),
 });
@@ -205,6 +212,16 @@ router.post(
   "/tags",
   validate({ body: createTagSchema }),
   contactsController.createTag,
+);
+router.patch(
+  "/tags/:tagId",
+  validate({ params: tagIdParamSchema, body: updateTagSchema }),
+  contactsController.updateTag,
+);
+router.delete(
+  "/tags/:tagId",
+  validate({ params: tagIdParamSchema }),
+  contactsController.deleteTag,
 );
 router.get(
   "/tags/:tagId/recipients",

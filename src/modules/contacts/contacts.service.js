@@ -288,6 +288,22 @@ const createTag = async (userId, payload) => {
   return contactsRepository.createTag(userId, payload);
 };
 
+const updateTag = async (userId, tagId, payload) => {
+  const updated = await contactsRepository.updateTag(userId, tagId, payload);
+  if (!updated) {
+    throw new ApiError(404, "Tag not found");
+  }
+  return updated;
+};
+
+const deleteTag = async (userId, tagId) => {
+  const removed = await contactsRepository.deleteTag(userId, tagId);
+  if (!removed) {
+    throw new ApiError(404, "Tag not found");
+  }
+  return { deleted: true };
+};
+
 const listTagRecipients = async (userId, tagId) => {
   const recipients = await contactsRepository.listTagRecipients(userId, tagId);
   if (recipients === null) {
@@ -392,6 +408,8 @@ module.exports = {
   deleteContact,
   listTags,
   createTag,
+  updateTag,
+  deleteTag,
   listTagRecipients,
   listDynamicFields,
   createDynamicField,

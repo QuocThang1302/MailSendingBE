@@ -1,4 +1,11 @@
 const nodemailer = require("nodemailer");
+const { buildTrackingUrl } = require("../tracking/trackingToken");
+const {
+  buildListUnsubscribeHeaders,
+  ensureVisibleUnsubscribe,
+  injectTrackingPixel,
+  rewriteTrackedLinks,
+} = require("../tracking/emailDelivery");
 
 const transporterCache = new Map();
 
@@ -28,7 +35,7 @@ const htmlToText = (value) => {
     .trim();
 };
 
-const getContactTokens = (contact) => {
+const getContactTokens = (contact, additionalTokens = {}) => {
   const firstName = contact.first_name || "";
   const lastName = contact.last_name || "";
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
@@ -47,15 +54,16 @@ const getContactTokens = (contact) => {
     country: contact.country || "",
     language: contact.language || "",
     source: contact.source || "",
+    ...additionalTokens,
   };
 };
 
-const replacePlaceholders = (value, contact) => {
+const replacePlaceholders = (value, contact, additionalTokens) => {
   if (value === null || value === undefined) {
     return "";
   }
 
-  const tokens = getContactTokens(contact);
+  const tokens = getContactTokens(contact, additionalTokens);
 
   return String(value).replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key) => {
     if (tokens[key] === undefined || tokens[key] === null) {
@@ -145,13 +153,23 @@ const buildFromAddress = (account) => {
   return name ? `"${name.replace(/"/g, '\\"')}" <${address}>` : address;
 };
 
-const renderCampaignEmail = (template, contact) => {
-  const subject = replacePlaceholders(template.subject || "", contact).trim();
-  const previewText = replacePlaceholders(template.preview_text || "", contact);
-  const htmlBody = replacePlaceholders(template.content_html || "", contact);
+const renderCampaignEmail = (template, contact, options = {}) => {
+  const tokens = options.tokens || {};
+  const subject = replacePlaceholders(
+    template.subject || "",
+    contact,
+    tokens,
+  ).trim();
+  const previewText = replacePlaceholders(
+    template.preview_text || "",
+    contact,
+    tokens,
+  );
+  const htmlBody = replacePlaceholders(template.content_html || "", contact, tokens);
   const textBody = replacePlaceholders(
     template.content_text || htmlToText(htmlBody),
     contact,
+    tokens,
   );
 
   return {
@@ -161,10 +179,44 @@ const renderCampaignEmail = (template, contact) => {
   };
 };
 
-const sendCampaignEmail = async ({ account, template, contact, recipientEmail }) => {
+const sendCampaignEmail = async ({
+  account,
+  template,
+  contact,
+  recipientId,
+  recipientEmail,
+}) => {
   validateSmtpAccount(account);
   const transporter = getTransporter(account);
-  const rendered = renderCampaignEmail(template, contact);
+  const unsubscribeUrl = buildTrackingUrl("unsubscribe", recipientId);
+  const baseRendered = renderCampaignEmail(template, contact, {
+    tokens: {
+      unsubscribe_url: unsubscribeUrl || "",
+    },
+  });
+  const htmlWithTrackedLinks = rewriteTrackedLinks({
+    html: baseRendered.html,
+    entityId: recipientId,
+    unsubscribeUrl,
+    buildClickUrl: (id, targetUrl) =>
+      buildTrackingUrl("click", id, { url: targetUrl }),
+  });
+  const htmlWithOpenPixel = injectTrackingPixel({
+    html: htmlWithTrackedLinks,
+    entityId: recipientId,
+    buildOpenUrl: (id) => buildTrackingUrl("open", id),
+  });
+  const deliveredContent = ensureVisibleUnsubscribe({
+    html: htmlWithOpenPixel,
+    text: baseRendered.text,
+    unsubscribeUrl,
+  });
+  const rendered = {
+    ...baseRendered,
+    html: deliveredContent.html,
+    text: deliveredContent.text,
+  };
+  const unsubscribeHeaders = buildListUnsubscribeHeaders(unsubscribeUrl);
 
   const info = await transporter.sendMail({
     from: buildFromAddress(account),
@@ -172,6 +224,9 @@ const sendCampaignEmail = async ({ account, template, contact, recipientEmail })
     subject: rendered.subject || "(No subject)",
     html: rendered.html,
     text: rendered.text,
+    ...(Object.keys(unsubscribeHeaders).length
+      ? { headers: unsubscribeHeaders }
+      : {}),
   });
 
   return {

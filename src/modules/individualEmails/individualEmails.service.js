@@ -3,9 +3,35 @@ const nodemailer = require("nodemailer");
 
 const ApiError = require("../../common/ApiError");
 const individualEmailsRepository = require("./individualEmails.repository");
+const { buildIndividualTrackingUrl } = require("../tracking/trackingToken");
+const {
+  buildListUnsubscribeHeaders,
+  ensureVisibleUnsubscribe,
+  injectTrackingPixel,
+  rewriteTrackedLinks,
+} = require("../tracking/emailDelivery");
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TRACKING_MIGRATION_FILE =
+  "src/scripts/sql/20260527_add_individual_email_tracking.sql";
+
+const mapIndividualEmailError = (error) => {
+  const message = String(error?.message || "");
+  const missingTrackingSchema =
+    /individual_emails\.(email|click_time|open_count|click_count)/i.test(
+      message,
+    ) || /email_tracking\.individual_email_id/i.test(message);
+
+  if (missingTrackingSchema) {
+    throw new ApiError(
+      503,
+      `Individual email tracking migration is required. Run ${TRACKING_MIGRATION_FILE}.`,
+    );
+  }
+
+  throw error;
+};
 
 const escapeHtml = (value) =>
   String(value || "")
@@ -48,7 +74,8 @@ const applyMergeTags = (template, context) =>
     .replace(/\{\{\s*phone\s*\}\}/gi, context.phone)
     .replace(/\{\{\s*company\s*\}\}/gi, context.company)
     .replace(/\{\{\s*amount\s*\}\}/gi, context.amount)
-    .replace(/\{\{\s*orderId\s*\}\}/gi, context.orderId);
+    .replace(/\{\{\s*orderId\s*\}\}/gi, context.orderId)
+    .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, context.unsubscribeUrl || "");
 
 const clampQrSize = (value) => {
   const size = Number.parseInt(value, 10);
@@ -251,24 +278,84 @@ const sendBatch = async (userId, payload, mode) => {
       company: String(contact?.company || ""),
       amount: "",
       orderId: "",
+      unsubscribeUrl: "",
     };
 
     const renderedSubject = applyMergeTags(payload.subject, context);
-    const renderedText = applyMergeTags(payload.content, context);
-    const renderedHtml = resolveQrImages(applyMergeTags(defaultHtml, context));
+    let renderedText = applyMergeTags(payload.content, context);
+    let renderedHtml = resolveQrImages(applyMergeTags(defaultHtml, context));
     const now = new Date().toISOString();
+    let emailRecord = null;
+    let unsubscribeUrl = null;
+
+    if (mode === "send") {
+      emailRecord = await individualEmailsRepository.createIndividualEmail(userId, {
+        contactId: contact?.id || null,
+        email,
+        emailAccountId: account.id,
+        subject: renderedSubject,
+        contentHtml: renderedHtml,
+        contentText: renderedText,
+      });
+      unsubscribeUrl = buildIndividualTrackingUrl(
+        "unsubscribe",
+        emailRecord.id,
+      );
+      const deliveryContext = {
+        ...context,
+        unsubscribeUrl: unsubscribeUrl || "",
+      };
+      renderedText = applyMergeTags(payload.content, deliveryContext);
+      const htmlWithTrackedLinks = rewriteTrackedLinks({
+        html: resolveQrImages(applyMergeTags(defaultHtml, deliveryContext)),
+        entityId: emailRecord.id,
+        unsubscribeUrl,
+        buildClickUrl: (id, targetUrl) =>
+          buildIndividualTrackingUrl("click", id, { url: targetUrl }),
+      });
+      const htmlWithOpenPixel = injectTrackingPixel({
+        html: htmlWithTrackedLinks,
+        entityId: emailRecord.id,
+        buildOpenUrl: (id) => buildIndividualTrackingUrl("open", id),
+      });
+      const deliveredContent = ensureVisibleUnsubscribe({
+        html: htmlWithOpenPixel,
+        text: renderedText,
+        unsubscribeUrl,
+      });
+      renderedText = deliveredContent.text;
+      renderedHtml = deliveredContent.html;
+    }
 
     try {
+      const unsubscribeHeaders = buildListUnsubscribeHeaders(unsubscribeUrl);
       const info = await transporter.sendMail({
         from: fromHeader,
         to: email,
         subject: renderedSubject,
         text: renderedText,
         html: renderedHtml,
+        ...(Object.keys(unsubscribeHeaders).length
+          ? { headers: unsubscribeHeaders }
+          : {}),
       });
 
+      if (emailRecord) {
+        await individualEmailsRepository.updateIndividualEmailResult(
+          userId,
+          emailRecord.id,
+          {
+            content_html: renderedHtml,
+            content_text: renderedText,
+            status: "sent",
+            sent_time: now,
+            error_message: null,
+          },
+        );
+      }
       sentCount += 1;
       results.push({
+        id: emailRecord?.id || null,
         email,
         status: "sent",
         messageId: info.messageId || null,
@@ -285,7 +372,20 @@ const sendBatch = async (userId, payload, mode) => {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown SMTP error";
+      if (emailRecord) {
+        await individualEmailsRepository.updateIndividualEmailResult(
+          userId,
+          emailRecord.id,
+          {
+            content_html: renderedHtml,
+            content_text: renderedText,
+            status: "failed",
+            error_message: toSafeMessage(message),
+          },
+        );
+      }
       results.push({
+        id: emailRecord?.id || null,
         email,
         status: "failed",
         error: message,
@@ -340,7 +440,54 @@ const sendBatch = async (userId, payload, mode) => {
 const sendPreview = async (userId, payload) =>
   sendBatch(userId, payload, "preview");
 
-const sendEmails = async (userId, payload) => sendBatch(userId, payload, "send");
+const sendEmails = async (userId, payload) => {
+  try {
+    return await sendBatch(userId, payload, "send");
+  } catch (error) {
+    mapIndividualEmailError(error);
+  }
+};
+
+const listEmails = async (userId, query) => {
+  try {
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 20;
+    const result = await individualEmailsRepository.listIndividualEmails(userId, {
+      page,
+      pageSize,
+    });
+
+    return {
+      items: result.rows,
+      pagination: {
+        page,
+        pageSize,
+        total: result.total,
+        totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+      },
+    };
+  } catch (error) {
+    mapIndividualEmailError(error);
+  }
+};
+
+const getEmailById = async (userId, emailId) => {
+  try {
+    const email = await individualEmailsRepository.findIndividualEmailById(
+      userId,
+      emailId,
+    );
+    if (!email) {
+      throw new ApiError(404, "Sent email not found");
+    }
+    return email;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    mapIndividualEmailError(error);
+  }
+};
 
 const importRecipients = async (_userId, { file }) => {
   const rows = parseRecipientsFromFile(file);
@@ -382,4 +529,6 @@ module.exports = {
   sendPreview,
   sendEmails,
   importRecipients,
+  listEmails,
+  getEmailById,
 };

@@ -22,6 +22,11 @@ const toBool = (value, fallback) => {
   return fallback;
 };
 
+const toChoice = (value, choices, fallback) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return choices.includes(normalized) ? normalized : fallback;
+};
+
 const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: toInt(process.env.PORT, 5000),
@@ -29,6 +34,10 @@ const env = {
   supabaseKey: process.env.SUPABASE_KEY || "",
   jwtSecret: process.env.JWT_SECRET || "change_me_in_production",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+  trackingSecret:
+    process.env.TRACKING_SECRET ||
+    process.env.JWT_SECRET ||
+    "change_me_in_production",
   bcryptSaltRounds: toInt(process.env.BCRYPT_SALT_ROUNDS, 10),
   schedulerEnabled: toBool(process.env.SCHEDULER_ENABLED, true),
   schedulerIntervalMs: toInt(process.env.SCHEDULER_INTERVAL_MS, 15000),
@@ -49,6 +58,23 @@ const env = {
   supabaseStorageFolder: process.env.SUPABASE_STORAGE_FOLDER || "generated",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
   mediaPublicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL || "",
+  emailOpenTrackingEnabled: toBool(
+    process.env.EMAIL_OPEN_TRACKING_ENABLED,
+    false,
+  ),
+  emailClickTrackingMode: toChoice(
+    process.env.EMAIL_CLICK_TRACKING_MODE,
+    ["none", "marked", "all"],
+    "marked",
+  ),
+  emailTrackingRequireHttps: toBool(
+    process.env.EMAIL_TRACKING_REQUIRE_HTTPS,
+    true,
+  ),
+  emailAppendUnsubscribeFooter: toBool(
+    process.env.EMAIL_APPEND_UNSUBSCRIBE_FOOTER,
+    true,
+  ),
 };
 
 if (!env.supabaseUrl) {

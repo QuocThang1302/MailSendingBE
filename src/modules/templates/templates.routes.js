@@ -65,17 +65,22 @@ const updateTemplateSchema = z
 
 const designerBlockSchema = z.lazy(() =>
   z.object({
-    id: z.string().trim().min(1).max(100),
+    id: z.string().trim().min(1).max(100).optional(),
     type: z.string().trim().min(1).max(100),
     props: z.record(z.string(), z.any()).optional(),
     children: z.array(designerBlockSchema).optional(),
   }),
 );
 
-const designerLayoutSchema = z.object({
-  schemaVersion: z.coerce.number().int().positive().default(1),
-  blocks: z.array(designerBlockSchema).default([]),
-});
+const designerLayoutSchema = z
+  .object({
+    schemaVersion: z.coerce.number().int().positive().optional(),
+    blocks: z.array(designerBlockSchema).optional(),
+    root: designerBlockSchema.optional(),
+  })
+  .refine((value) => value.root || Array.isArray(value.blocks), {
+    message: "layout.root or layout.blocks is required",
+  });
 
 const saveDesignerSchema = z.object({
   layout: designerLayoutSchema,

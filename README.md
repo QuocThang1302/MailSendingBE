@@ -62,6 +62,10 @@ psql -f src/scripts/sql/20260331_add_campaign_scheduler_queue.sql
 
 ```bash
 psql -f src/scripts/sql/20260531_restrict_user_roles.sql
+6. Run individual email tracking migration:
+
+```bash
+psql -f src/scripts/sql/20260527_add_individual_email_tracking.sql
 ```
 
 7. Start in development mode:
@@ -85,6 +89,18 @@ SMTP sending:
 - Required fields for an active sending account: `email_address`, `smtp_host`, `smtp_port`, optional `smtp_username`, `smtp_password`, `use_tls`.
 - `POST /campaigns/:id/start` now sends real emails, stores rendered content per recipient, and records SMTP failures in `campaign_recipients.error_message` / `email_logs`.
 - `POST /email-accounts/:id/test` sends a test email using that account. Body supports `toEmail`, `subject`, `message`.
+
+Email tracking:
+
+- Set `PUBLIC_BASE_URL` to the publicly reachable backend URL before sending campaigns. For real email delivery, use an HTTPS branded domain such as `https://track.example.com`, not localhost, raw IP, or temporary tunnel domains.
+- Set a private `TRACKING_SECRET` used to sign per-recipient tracking links.
+- `EMAIL_TRACKING_REQUIRE_HTTPS=true` prevents tracking URLs from being generated when `PUBLIC_BASE_URL` is not HTTPS.
+- `EMAIL_OPEN_TRACKING_ENABLED=false` disables the 1x1 open pixel by default. Set it to `true` only after your sending domain, tracking domain, SPF, DKIM, and DMARC are configured.
+- `EMAIL_CLICK_TRACKING_MODE=marked` only rewrites links that are explicitly marked with `data-track-click="true"` or `data-mail-track-click="true"`. Use `none` to disable click tracking, or `all` to rewrite every external link.
+- `EMAIL_APPEND_UNSUBSCRIBE_FOOTER=true` appends a visible unsubscribe footer when the template does not already include `{{unsubscribe_url}}`.
+- `{{unsubscribe_url}}` renders a confirmation-based unsubscribe link.
+- Public endpoints are `GET /tracking/open/:token.gif`, `GET /tracking/click/:token`, and `GET/POST /tracking/unsubscribe/:token`.
+- Individual emails sent after the tracking migration store delivered HTML snapshots and tracking activity.
 
 AI media generation for email:
 
@@ -143,9 +159,14 @@ Designer notes:
 - `GET/POST/PATCH/DELETE /email-accounts`
 - `POST /email-accounts/:id/default`
 - `POST /email-accounts/:id/test`
+- `GET /individual-emails`
+- `GET /individual-emails/:id` (sent HTML snapshot and tracking events)
+- `POST /individual-emails/send`
+- `POST /individual-emails/preview`
 - `GET/POST /campaigns`
 - `GET /campaigns/:id`
 - `GET /campaigns/:id/recipients`
+- `GET /campaigns/:id/recipients/:recipientId` (sent HTML snapshot and tracking events)
 - `POST /campaigns/:id/start`
 - `POST /campaigns/:id/pause`
 - `GET /dashboard/overview`
@@ -176,6 +197,8 @@ AI media examples:
 Provider env example:
 
 ```env
+PUBLIC_BASE_URL=https://api.example.com
+TRACKING_SECRET=change_me_for_public_email_tracking
 AI_MEDIA_PROVIDER=pollinations
 POLLINATIONS_API_KEY=your_pollinations_api_key
 POLLINATIONS_BASE_URL=https://gen.pollinations.ai
