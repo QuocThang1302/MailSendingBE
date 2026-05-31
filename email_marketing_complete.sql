@@ -18,7 +18,7 @@ CREATE TABLE users (
     name         VARCHAR(150) NOT NULL,
     email        VARCHAR(150) UNIQUE NOT NULL,
     password     TEXT NOT NULL,
-    role         VARCHAR(50) DEFAULT 'user',
+    role         VARCHAR(50) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     avatar_url   TEXT,
     is_active    BOOLEAN DEFAULT TRUE,
     last_login   TIMESTAMP,

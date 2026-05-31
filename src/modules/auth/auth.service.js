@@ -3,13 +3,14 @@ const jwt = require("jsonwebtoken");
 
 const ApiError = require("../../common/ApiError");
 const env = require("../../config/env");
+const { ROLES, normalizeRole } = require("../../common/roles");
 const authRepository = require("./auth.repository");
 
 const toAuthPayload = (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
-  role: user.role,
+  role: normalizeRole(user.role),
   isActive: user.is_active,
 });
 
@@ -17,7 +18,7 @@ const signToken = (user) => {
   return jwt.sign(
     {
       email: user.email,
-      role: user.role,
+      role: normalizeRole(user.role),
     },
     env.jwtSecret,
     {
@@ -38,7 +39,7 @@ const register = async ({ name, email, password }) => {
     name,
     email,
     password: passwordHash,
-    role: "user",
+    role: ROLES.USER,
   });
 
   const token = signToken(user);

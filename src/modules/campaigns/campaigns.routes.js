@@ -15,6 +15,7 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   status: z.string().trim().max(50).optional(),
+  userId: z.coerce.number().int().positive().optional(),
 });
 
 const createCampaignSchema = z.object({

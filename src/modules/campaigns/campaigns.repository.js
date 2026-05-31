@@ -2,7 +2,7 @@ const { supabase } = require("../../config/supabase");
 const { renderCampaignEmail, sendCampaignEmail } = require("./smtpMailer");
 
 const CAMPAIGN_COLUMNS =
-  "id, campaign_name, template_id, email_account_id, segment_id, status, campaign_type, scheduled_time, started_at, completed_at, total_recipients, sent_count, open_count, click_count, bounce_count, unsubscribe_count, created_at, updated_at";
+  "id, user_id, campaign_name, template_id, email_account_id, segment_id, status, campaign_type, scheduled_time, started_at, completed_at, total_recipients, sent_count, open_count, click_count, bounce_count, unsubscribe_count, created_at, updated_at";
 const RECIPIENT_COLUMNS =
   "id, contact_id, email, status, rendered_subject, sent_time, open_time, click_time, open_count, click_count, error_message";
 
@@ -27,31 +27,37 @@ const decorateCampaignRows = async (rows) => {
   const templateIds = unique(rows.map((row) => row.template_id));
   const accountIds = unique(rows.map((row) => row.email_account_id));
   const segmentIds = unique(rows.map((row) => row.segment_id));
+  const ownerIds = unique(rows.map((row) => row.user_id));
 
-  const [templatesResult, accountsResult, segmentsResult] = await Promise.all([
-    templateIds.length > 0
-      ? supabase
-          .from("email_templates")
-          .select("id, template_name")
-          .in("id", templateIds)
-      : Promise.resolve({ data: [], error: null }),
-    accountIds.length > 0
-      ? supabase
-          .from("email_accounts")
-          .select("id, email_address")
-          .in("id", accountIds)
-      : Promise.resolve({ data: [], error: null }),
-    segmentIds.length > 0
-      ? supabase
-          .from("contact_segments")
-          .select("id, segment_name")
-          .in("id", segmentIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
+  const [templatesResult, accountsResult, segmentsResult, ownersResult] =
+    await Promise.all([
+      templateIds.length > 0
+        ? supabase
+            .from("email_templates")
+            .select("id, template_name")
+            .in("id", templateIds)
+        : Promise.resolve({ data: [], error: null }),
+      accountIds.length > 0
+        ? supabase
+            .from("email_accounts")
+            .select("id, email_address")
+            .in("id", accountIds)
+        : Promise.resolve({ data: [], error: null }),
+      segmentIds.length > 0
+        ? supabase
+            .from("contact_segments")
+            .select("id, segment_name")
+            .in("id", segmentIds)
+        : Promise.resolve({ data: [], error: null }),
+      ownerIds.length > 0
+        ? supabase.from("users").select("id, name, email").in("id", ownerIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
   throwIfError(templatesResult.error);
   throwIfError(accountsResult.error);
   throwIfError(segmentsResult.error);
+  throwIfError(ownersResult.error);
 
   const templateMap = new Map(
     (templatesResult.data || []).map((row) => [row.id, row.template_name]),
@@ -61,6 +67,9 @@ const decorateCampaignRows = async (rows) => {
   );
   const segmentMap = new Map(
     (segmentsResult.data || []).map((row) => [row.id, row.segment_name]),
+  );
+  const ownerMap = new Map(
+    (ownersResult.data || []).map((row) => [row.id, row]),
   );
 
   return rows.map((row) => ({
@@ -74,6 +83,7 @@ const decorateCampaignRows = async (rows) => {
     segment_name: row.segment_id
       ? segmentMap.get(row.segment_id) || null
       : null,
+    owner: row.user_id ? ownerMap.get(row.user_id) || null : null,
   }));
 };
 
@@ -103,6 +113,50 @@ const listCampaigns = async (userId, { page, pageSize, status }) => {
   };
 };
 
+const listAllCampaigns = async ({ page, pageSize, status, userId }) => {
+  const offset = (page - 1) * pageSize;
+
+  let builder = supabase
+    .from("campaigns")
+    .select(CAMPAIGN_COLUMNS, { count: "exact" });
+
+  if (status) {
+    builder = builder.eq("status", status);
+  }
+
+  if (userId) {
+    builder = builder.eq("user_id", userId);
+  }
+
+  const { data, count, error } = await builder
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  throwIfError(error);
+
+  const decoratedRows = await decorateCampaignRows(data || []);
+
+  return {
+    total: count || 0,
+    rows: decoratedRows,
+  };
+};
+
+const getRecipientsByStatus = async (campaignId) => {
+  const { data: recipients, error: recipientsError } = await supabase
+    .from("campaign_recipients")
+    .select("status")
+    .eq("campaign_id", campaignId);
+
+  throwIfError(recipientsError);
+
+  return (recipients || []).reduce((acc, row) => {
+    const key = row.status || "unknown";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+};
+
 const findCampaignById = async (userId, campaignId) => {
   const { data: campaignRow, error: campaignError } = await supabase
     .from("campaigns")
@@ -119,22 +173,30 @@ const findCampaignById = async (userId, campaignId) => {
 
   const [decorated] = await decorateCampaignRows([campaignRow]);
 
-  const { data: recipients, error: recipientsError } = await supabase
-    .from("campaign_recipients")
-    .select("status")
-    .eq("campaign_id", campaignId);
+  return {
+    ...decorated,
+    recipientsByStatus: await getRecipientsByStatus(campaignId),
+  };
+};
 
-  throwIfError(recipientsError);
+const findCampaignByIdForAdmin = async (campaignId) => {
+  const { data: campaignRow, error: campaignError } = await supabase
+    .from("campaigns")
+    .select(CAMPAIGN_COLUMNS)
+    .eq("id", campaignId)
+    .maybeSingle();
 
-  const recipientsByStatus = (recipients || []).reduce((acc, row) => {
-    const key = row.status || "unknown";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+  throwIfError(campaignError);
+
+  if (!campaignRow) {
+    return null;
+  }
+
+  const [decorated] = await decorateCampaignRows([campaignRow]);
 
   return {
     ...decorated,
-    recipientsByStatus,
+    recipientsByStatus: await getRecipientsByStatus(campaignId),
   };
 };
 
@@ -179,11 +241,51 @@ const listCampaignRecipients = async (
   };
 };
 
+const listCampaignRecipientsForAdmin = async (
+  campaignId,
+  { page, pageSize, status },
+) => {
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .select("id")
+    .eq("id", campaignId)
+    .maybeSingle();
+
+  throwIfError(campaignError);
+
+  if (!campaign) {
+    return null;
+  }
+
+  const offset = (page - 1) * pageSize;
+
+  let builder = supabase
+    .from("campaign_recipients")
+    .select(RECIPIENT_COLUMNS, { count: "exact" })
+    .eq("campaign_id", campaignId);
+
+  if (status) {
+    builder = builder.eq("status", status);
+  }
+
+  const { data, count, error } = await builder
+    .order("id", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  throwIfError(error);
+
+  return {
+    total: count || 0,
+    rows: data || [],
+  };
+};
+
 const createCampaign = async (userId, payload) => {
   const { data: templateCheck, error: templateError } = await supabase
     .from("email_templates")
     .select("id")
     .eq("id", payload.templateId)
+    .eq("user_id", userId)
     .maybeSingle();
   throwIfError(templateError);
   if (!templateCheck) {
@@ -386,6 +488,7 @@ const startCampaign = async (userId, campaignId) => {
       .from("email_templates")
       .select(TEMPLATE_SEND_COLUMNS)
       .eq("id", campaign.template_id)
+      .eq("user_id", userId)
       .maybeSingle(),
     supabase
       .from("email_accounts")
@@ -575,6 +678,36 @@ const pauseCampaign = async (userId, campaignId) => {
   return data || null;
 };
 
+const pauseAnyCampaign = async (campaignId) => {
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .update({
+      status: "paused",
+      updated_at: now,
+    })
+    .eq("id", campaignId)
+    .in("status", ["scheduled", "sending", "queued"])
+    .select("id, user_id, campaign_name, status, updated_at")
+    .maybeSingle();
+
+  throwIfError(error);
+  return data || null;
+};
+
+const deleteCampaignByAdmin = async (campaignId) => {
+  const { data, error } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("id", campaignId)
+    .select("id")
+    .maybeSingle();
+
+  throwIfError(error);
+  return !!data;
+};
+
 const acquireWorkerLock = async (lockKey, ownerId, ttlSeconds) => {
   const nowIso = new Date().toISOString();
   const expiresAtIso = new Date(Date.now() + ttlSeconds * 1000).toISOString();
@@ -754,11 +887,16 @@ const markDispatchQueueFailed = async (queueId, errorMessage) => {
 
 module.exports = {
   listCampaigns,
+  listAllCampaigns,
   findCampaignById,
+  findCampaignByIdForAdmin,
   listCampaignRecipients,
+  listCampaignRecipientsForAdmin,
   createCampaign,
   startCampaign,
   pauseCampaign,
+  pauseAnyCampaign,
+  deleteCampaignByAdmin,
   acquireWorkerLock,
   releaseWorkerLock,
   listDueScheduledCampaigns,

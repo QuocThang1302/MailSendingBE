@@ -43,6 +43,10 @@ const env = {
     process.env.POLLINATIONS_BASE_URL || "https://gen.pollinations.ai",
   pollinationsImageModel: process.env.POLLINATIONS_IMAGE_MODEL || "flux",
   pollinationsVideoModel: process.env.POLLINATIONS_VIDEO_MODEL || "",
+  mediaStorageProvider: process.env.MEDIA_STORAGE_PROVIDER || "local",
+  supabaseStorageBucket:
+    process.env.SUPABASE_STORAGE_BUCKET || "generated-media",
+  supabaseStorageFolder: process.env.SUPABASE_STORAGE_FOLDER || "generated",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
   mediaPublicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL || "",
 };

@@ -1,4 +1,5 @@
 const { supabase } = require("../../config/supabase");
+const { isAdmin } = require("../../common/roles");
 const { renderTemplateLayout } = require("./templateRenderer");
 
 const TEMPLATE_OWNER_FORBIDDEN = "TEMPLATE_OWNER_FORBIDDEN";
@@ -56,8 +57,6 @@ const findTemplateOwner = async (templateId) => {
   return data || null;
 };
 
-const isAdmin = (actor) => String(actor?.role || "").toLowerCase() === "admin";
-
 const ensureTemplateOwnership = async (actor, templateId) => {
   const template = await findTemplateOwner(templateId);
   if (!template) {
@@ -80,12 +79,24 @@ const ensureTemplateDeleteAccess = async (actor, templateId) => {
   return template;
 };
 
+const ensureTemplateReadAccess = async (actor, templateId) => {
+  const template = await findTemplateOwner(templateId);
+  if (!template) {
+    return null;
+  }
+  if (!isAdmin(actor) && Number(template.user_id) !== Number(actor?.id)) {
+    throw new Error(TEMPLATE_OWNER_FORBIDDEN);
+  }
+  return template;
+};
+
 const listTemplates = async (userId, { page, pageSize, isActive }) => {
   const offset = (page - 1) * pageSize;
 
   let builder = supabase
     .from("email_templates")
-    .select(LIST_COLUMNS, { count: "exact" });
+    .select(LIST_COLUMNS, { count: "exact" })
+    .eq("user_id", userId);
 
   if (isActive !== undefined) {
     builder = builder.eq("is_active", isActive);
@@ -104,6 +115,45 @@ const listTemplates = async (userId, { page, pageSize, isActive }) => {
 };
 
 const findTemplateById = async (userId, templateId) => {
+  const { data, error } = await supabase
+    .from("email_templates")
+    .select(DETAIL_COLUMNS)
+    .eq("id", templateId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfError(error);
+  return decorateTemplateRow(data);
+};
+
+const listAllTemplates = async ({ page, pageSize, isActive, userId }) => {
+  const offset = (page - 1) * pageSize;
+
+  let builder = supabase
+    .from("email_templates")
+    .select(LIST_COLUMNS, { count: "exact" });
+
+  if (userId) {
+    builder = builder.eq("user_id", userId);
+  }
+
+  if (isActive !== undefined) {
+    builder = builder.eq("is_active", isActive);
+  }
+
+  const { data, count, error } = await builder
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  throwIfError(error);
+
+  return {
+    total: count || 0,
+    rows: await decorateTemplateRows(data || []),
+  };
+};
+
+const findTemplateByIdForAdmin = async (templateId) => {
   const { data, error } = await supabase
     .from("email_templates")
     .select(DETAIL_COLUMNS)
@@ -186,6 +236,23 @@ const updateTemplate = async (actor, templateId, payload) => {
 };
 
 const deleteTemplate = async (actor, templateId) => {
+  const template = await ensureTemplateOwnership(actor, templateId);
+  if (!template) {
+    return false;
+  }
+
+  const { data, error } = await supabase
+    .from("email_templates")
+    .delete()
+    .eq("id", templateId)
+    .eq("user_id", template.user_id)
+    .select("id");
+
+  throwIfError(error);
+  return Array.isArray(data) && data.length > 0;
+};
+
+const deleteAnyTemplate = async (actor, templateId) => {
   const template = await ensureTemplateDeleteAccess(actor, templateId);
   if (!template) {
     return false;
@@ -202,15 +269,8 @@ const deleteTemplate = async (actor, templateId) => {
   return Array.isArray(data) && data.length > 0;
 };
 
-const getTemplateDesigner = async (userId, templateId) => {
-  const { data: template, error: templateError } = await supabase
-    .from("email_templates")
-    .select("id, user_id, version")
-    .eq("id", templateId)
-    .maybeSingle();
-
-  throwIfError(templateError);
-
+const getTemplateDesigner = async (actor, templateId) => {
+  const template = await ensureTemplateReadAccess(actor, templateId);
   if (!template) {
     return null;
   }
@@ -456,7 +516,7 @@ const publishTemplateDesigner = async (actor, templateId, payload) => {
 };
 
 const listTemplateDesignerVersions = async (actor, templateId, pagination) => {
-  const template = await ensureTemplateOwnership(actor, templateId);
+  const template = await ensureTemplateReadAccess(actor, templateId);
   if (!template) {
     return null;
   }
@@ -492,7 +552,7 @@ const listTemplateDesignerVersions = async (actor, templateId, pagination) => {
 };
 
 const getTemplateDesignerVersion = async (actor, templateId, versionId) => {
-  const template = await ensureTemplateOwnership(actor, templateId);
+  const template = await ensureTemplateReadAccess(actor, templateId);
   if (!template) {
     return null;
   }
@@ -586,7 +646,9 @@ const restoreTemplateDesignerVersion = async (
 module.exports = {
   TEMPLATE_OWNER_FORBIDDEN,
   listTemplates,
+  listAllTemplates,
   findTemplateById,
+  findTemplateByIdForAdmin,
   createTemplate,
   updateTemplate,
   getTemplateDesigner,
@@ -596,4 +658,5 @@ module.exports = {
   getTemplateDesignerVersion,
   restoreTemplateDesignerVersion,
   deleteTemplate,
+  deleteAnyTemplate,
 };

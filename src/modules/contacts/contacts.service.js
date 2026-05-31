@@ -1,5 +1,6 @@
 const ApiError = require("../../common/ApiError");
 const XLSX = require("xlsx");
+const { isAdmin } = require("../../common/roles");
 const contactsRepository = require("./contacts.repository");
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -81,15 +82,21 @@ const parseContactsFromFile = (file) => {
   });
 };
 
-const listContacts = async (userId, filters) => {
+const listContacts = async (actor, filters) => {
   const page = filters.page || 1;
   const pageSize = filters.pageSize || 20;
 
-  const result = await contactsRepository.listContacts(userId, {
-    ...filters,
-    page,
-    pageSize,
-  });
+  const result = isAdmin(actor)
+    ? await contactsRepository.listAllContacts({
+        ...filters,
+        page,
+        pageSize,
+      })
+    : await contactsRepository.listContacts(actor.id, {
+        ...filters,
+        page,
+        pageSize,
+      });
 
   return {
     items: result.rows,
@@ -102,15 +109,18 @@ const listContacts = async (userId, filters) => {
   };
 };
 
-const getContactById = async (userId, contactId) => {
-  const contact = await contactsRepository.findContactById(userId, contactId);
+const getContactById = async (actor, contactId) => {
+  const contact = isAdmin(actor)
+    ? await contactsRepository.findContactByIdForAdmin(contactId)
+    : await contactsRepository.findContactById(actor.id, contactId);
   if (!contact) {
     throw new ApiError(404, "Contact not found");
   }
 
+  const ownerId = contact.user_id || actor.id;
   const [tags, customFields] = await Promise.all([
     contactsRepository.getContactTags(contactId),
-    contactsRepository.listContactFieldValues(userId, contactId),
+    contactsRepository.listContactFieldValues(ownerId, contactId),
   ]);
 
   return {
@@ -193,15 +203,23 @@ const importContacts = async (userId, { file, mode = "insert" }) => {
   };
 };
 
-const exportContacts = async (userId, query) => {
+const exportContacts = async (actor, query) => {
   const format = query.format || "csv";
-  const contacts = await contactsRepository.listContactsForExport(userId, {
-    search: query.search,
-    status: query.status,
-    city: query.city,
-  });
+  const contacts = isAdmin(actor)
+    ? await contactsRepository.listAllContactsForExport({
+        userId: query.userId,
+        search: query.search,
+        status: query.status,
+        city: query.city,
+      })
+    : await contactsRepository.listContactsForExport(actor.id, {
+        search: query.search,
+        status: query.status,
+        city: query.city,
+      });
 
   const exportRows = contacts.map((item) => ({
+    ...(isAdmin(actor) ? { userId: item.user_id || "" } : {}),
     email: item.email || "",
     firstName: item.first_name || "",
     lastName: item.last_name || "",
@@ -258,8 +276,12 @@ const deleteContact = async (userId, contactId) => {
   return { deleted: true };
 };
 
-const listTags = async (userId) => {
-  return contactsRepository.listTags(userId);
+const listTags = async (actor, query = {}) => {
+  if (isAdmin(actor)) {
+    return contactsRepository.listAllTags({ userId: query.userId });
+  }
+
+  return contactsRepository.listTags(actor.id);
 };
 
 const createTag = async (userId, payload) => {
@@ -279,8 +301,12 @@ const listTagRecipients = async (userId, tagId) => {
   };
 };
 
-const listDynamicFields = async (userId) => {
-  return contactsRepository.listDynamicFields(userId);
+const listDynamicFields = async (actor, query = {}) => {
+  if (isAdmin(actor)) {
+    return contactsRepository.listAllDynamicFields({ userId: query.userId });
+  }
+
+  return contactsRepository.listDynamicFields(actor.id);
 };
 
 const createDynamicField = async (userId, payload) => {
