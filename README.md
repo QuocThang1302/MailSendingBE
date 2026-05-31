@@ -156,6 +156,45 @@ Designer notes:
 - `layout` is the source of truth for drag-drop blocks/components.
 - Backend now auto-renders `renderedHtml` and `renderedText` from `layout` if these fields are omitted.
 - You can still send `renderedHtml` / `renderedText` explicitly to override auto-render output.
+- For Google-style marketing emails, use `columns`/`grid` with `featureCard` blocks. The renderer outputs email-client-friendly table HTML with inline styles and stacks columns on mobile.
+
+Example designer layout:
+
+```json
+{
+  "schemaVersion": 1,
+  "blocks": [
+    {
+      "type": "columns",
+      "props": { "columns": 2, "gap": 28 },
+      "children": [
+        {
+          "type": "featureCard",
+          "props": {
+            "imageUrl": "https://example.com/gemini.jpg",
+            "imageAlt": "Gemini app",
+            "title": "Gemini app",
+            "description": "Chat with Gemini, a personal AI assistant from Google.",
+            "linkLabel": "Try Gemini in Pro >",
+            "linkUrl": "https://example.com/gemini"
+          }
+        },
+        {
+          "type": "featureCard",
+          "props": {
+            "imageUrl": "https://example.com/flow.jpg",
+            "imageAlt": "Flow",
+            "title": "Flow",
+            "description": "Built with and for creatives, Flow is an AI filmmaking tool.",
+            "linkLabel": "Try Flow in Pro >",
+            "linkUrl": "https://example.com/flow"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 - `GET/POST/PATCH/DELETE /email-accounts`
 - `POST /email-accounts/:id/default`
 - `POST /email-accounts/:id/test`
