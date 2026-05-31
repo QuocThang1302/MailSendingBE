@@ -8,6 +8,7 @@ const campaignRoutes = require("../modules/campaigns/campaigns.routes");
 const dashboardRoutes = require("../modules/dashboard/dashboard.routes");
 const individualEmailRoutes = require("../modules/individualEmails/individualEmails.routes");
 const aiMediaRoutes = require("../modules/aiMedia/aiMedia.routes");
+const adminRoutes = require("../modules/admin/admin.routes");
 const trackingRoutes = require("../modules/tracking/tracking.routes");
 
 const router = Router();
@@ -28,6 +29,7 @@ router.use("/campaigns", campaignRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/individual-emails", individualEmailRoutes);
 router.use("/ai-media", aiMediaRoutes);
+router.use("/admin", adminRoutes);
 router.use("/tracking", trackingRoutes);
 
 module.exports = router;

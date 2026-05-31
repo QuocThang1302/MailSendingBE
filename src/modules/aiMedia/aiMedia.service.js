@@ -4,6 +4,7 @@ const { randomUUID } = require("crypto");
 
 const ApiError = require("../../common/ApiError");
 const env = require("../../config/env");
+const { supabase } = require("../../config/supabase");
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const POLLINATIONS_DEFAULT_IMAGE_SIZE = "1536x1024";
@@ -109,6 +110,17 @@ const ensureMediaDir = async () => {
   await fs.mkdir(GENERATED_MEDIA_DIR, { recursive: true });
 };
 
+const getMediaStorageProvider = () => {
+  const provider = String(env.mediaStorageProvider || "local").toLowerCase();
+  if (provider === "local" || provider === "supabase") {
+    return provider;
+  }
+  throw new ApiError(
+    500,
+    "MEDIA_STORAGE_PROVIDER must be either 'local' or 'supabase'",
+  );
+};
+
 const getMediaBaseUrl = () => {
   const baseUrl = env.mediaPublicBaseUrl || `${env.publicBaseUrl}/media`;
   return String(baseUrl || "").replace(/\/+$/, "");
@@ -122,9 +134,86 @@ const buildPublicUrl = (filename) => {
   return `${baseUrl}/generated/${filename}`;
 };
 
-const saveGeneratedFile = async ({ buffer, extension }) => {
+const getContentType = (extension) => {
+  const normalized = String(extension || "").toLowerCase();
+  if (normalized === "png") {
+    return "image/png";
+  }
+  if (normalized === "webp") {
+    return "image/webp";
+  }
+  if (normalized === "mp4") {
+    return "video/mp4";
+  }
+  return "image/jpeg";
+};
+
+const buildStoragePath = (filename) => {
+  const folder = String(env.supabaseStorageFolder || "")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  return folder ? `${folder}/${filename}` : filename;
+};
+
+const ensureSupabaseBucket = async () => {
+  const bucket = env.supabaseStorageBucket;
+  const { error: getError } = await supabase.storage.getBucket(bucket);
+
+  if (!getError) {
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(bucket, {
+    public: true,
+  });
+
+  if (
+    createError &&
+    !String(createError.message || "").includes("already exists")
+  ) {
+    throw new ApiError(
+      500,
+      `Could not prepare Supabase Storage bucket '${bucket}'`,
+      createError,
+    );
+  }
+};
+
+const saveGeneratedFileToSupabase = async ({ buffer, extension, filename }) => {
+  await ensureSupabaseBucket();
+
+  const bucket = env.supabaseStorageBucket;
+  const storagePath = buildStoragePath(filename);
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(storagePath, buffer, {
+      contentType: getContentType(extension),
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ApiError(
+      500,
+      "Could not upload generated media to Supabase Storage",
+      uploadError,
+    );
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+
+  if (!data?.publicUrl) {
+    throw new ApiError(500, "Could not build Supabase Storage public URL");
+  }
+
+  return {
+    filename,
+    storagePath,
+    url: data.publicUrl,
+  };
+};
+
+const saveGeneratedFileToLocal = async ({ buffer, filename }) => {
   await ensureMediaDir();
-  const filename = `${new Date().toISOString().slice(0, 10)}-${randomUUID()}.${extension}`;
   const filePath = path.join(GENERATED_MEDIA_DIR, filename);
   await fs.writeFile(filePath, buffer);
   return {
@@ -132,6 +221,16 @@ const saveGeneratedFile = async ({ buffer, extension }) => {
     path: filePath,
     url: buildPublicUrl(filename),
   };
+};
+
+const saveGeneratedFile = async ({ buffer, extension }) => {
+  const filename = `${new Date().toISOString().slice(0, 10)}-${randomUUID()}.${extension}`;
+
+  if (getMediaStorageProvider() === "supabase") {
+    return saveGeneratedFileToSupabase({ buffer, extension, filename });
+  }
+
+  return saveGeneratedFileToLocal({ buffer, filename });
 };
 
 const escapeHtml = (value) => {
@@ -364,6 +463,29 @@ const getVideoStatusOpenAi = async (videoId) => {
 
 const getVideoStatusPollinations = async (videoId) => {
   const safeFilename = path.basename(videoId);
+
+  if (getMediaStorageProvider() === "supabase") {
+    const bucket = env.supabaseStorageBucket;
+    const storagePath = buildStoragePath(safeFilename);
+    const { error } = await supabase.storage.from(bucket).download(storagePath);
+
+    if (error) {
+      throw new ApiError(404, "Generated Pollinations video was not found");
+    }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+
+    return {
+      id: safeFilename,
+      status: "completed",
+      progress: 100,
+      ready: true,
+      url: data.publicUrl,
+      filename: safeFilename,
+      storagePath,
+    };
+  }
+
   const filePath = path.join(GENERATED_MEDIA_DIR, safeFilename);
 
   try {

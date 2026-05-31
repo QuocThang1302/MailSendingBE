@@ -11,6 +11,11 @@ const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+const listQuerySchema = z.object({
+  status: z.string().trim().max(50).optional(),
+  userId: z.coerce.number().int().positive().optional(),
+});
+
 const createEmailAccountSchema = z.object({
   emailAddress: z.string().email().max(150),
   displayName: z.string().trim().max(150).optional(),
@@ -58,7 +63,11 @@ const testSmtpSchema = z
 
 router.use(auth);
 
-router.get("/", emailAccountsController.listEmailAccounts);
+router.get(
+  "/",
+  validate({ query: listQuerySchema }),
+  emailAccountsController.listEmailAccounts,
+);
 router.post(
   "/",
   validate({ body: createEmailAccountSchema }),

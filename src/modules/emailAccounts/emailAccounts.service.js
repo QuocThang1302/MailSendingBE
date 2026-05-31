@@ -1,16 +1,25 @@
 const ApiError = require("../../common/ApiError");
 const nodemailer = require("nodemailer");
+const { isAdmin } = require("../../common/roles");
 const emailAccountsRepository = require("./emailAccounts.repository");
 
-const listEmailAccounts = async (userId) => {
-  return emailAccountsRepository.listEmailAccounts(userId);
+const listEmailAccounts = async (actor, query = {}) => {
+  if (isAdmin(actor)) {
+    return emailAccountsRepository.listAllEmailAccounts({
+      userId: query.userId,
+      status: query.status,
+    });
+  }
+
+  return emailAccountsRepository.listEmailAccounts(actor.id, {
+    status: query.status,
+  });
 };
 
-const getEmailAccountById = async (userId, accountId) => {
-  const account = await emailAccountsRepository.findEmailAccountById(
-    userId,
-    accountId,
-  );
+const getEmailAccountById = async (actor, accountId) => {
+  const account = isAdmin(actor)
+    ? await emailAccountsRepository.findEmailAccountByIdForAdmin(accountId)
+    : await emailAccountsRepository.findEmailAccountById(actor.id, accountId);
   if (!account) {
     throw new ApiError(404, "Email account not found");
   }

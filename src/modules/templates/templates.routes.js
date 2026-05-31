@@ -7,6 +7,24 @@ const templatesController = require("./templates.controller");
 
 const router = Router();
 
+const booleanQuerySchema = z.preprocess((value) => {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no"].includes(normalized)) {
+    return false;
+  }
+  return value;
+}, z.boolean().optional());
+
 const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
@@ -19,7 +37,8 @@ const versionIdParamSchema = z.object({
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-  isActive: z.coerce.boolean().optional(),
+  isActive: booleanQuerySchema,
+  userId: z.coerce.number().int().positive().optional(),
 });
 
 const createTemplateSchema = z.object({

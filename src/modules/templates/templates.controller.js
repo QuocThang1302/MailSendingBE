@@ -3,13 +3,13 @@ const { sendOk } = require("../../common/http");
 const templatesService = require("./templates.service");
 
 const listTemplates = asyncHandler(async (req, res) => {
-  const data = await templatesService.listTemplates(req.user.id, req.query);
+  const data = await templatesService.listTemplates(req.user, req.query);
   return sendOk(res, data, "Fetched templates");
 });
 
 const getTemplateById = asyncHandler(async (req, res) => {
   const data = await templatesService.getTemplateById(
-    req.user.id,
+    req.user,
     req.params.id,
   );
   return sendOk(res, data, "Fetched template");
@@ -31,7 +31,7 @@ const updateTemplate = asyncHandler(async (req, res) => {
 
 const getTemplateDesigner = asyncHandler(async (req, res) => {
   const data = await templatesService.getTemplateDesigner(
-    req.user.id,
+    req.user,
     req.params.id,
   );
   return sendOk(res, data, "Fetched template designer draft");

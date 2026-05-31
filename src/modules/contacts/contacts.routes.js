@@ -33,6 +33,7 @@ const listQuerySchema = z.object({
   status: z.string().trim().max(50).optional(),
   city: z.string().trim().max(100).optional(),
   tagId: z.coerce.number().int().positive().optional(),
+  userId: z.coerce.number().int().positive().optional(),
 });
 
 const createContactSchema = z.object({
@@ -93,10 +94,15 @@ const exportQuerySchema = z.object({
   search: z.string().trim().max(150).optional(),
   status: z.string().trim().max(50).optional(),
   city: z.string().trim().max(100).optional(),
+  userId: z.coerce.number().int().positive().optional(),
 });
 
 const importQuerySchema = z.object({
   mode: z.enum(["insert", "upsert"]).default("insert"),
+});
+
+const ownerQuerySchema = z.object({
+  userId: z.coerce.number().int().positive().optional(),
 });
 
 const dynamicFieldTypeSchema = z.enum([
@@ -171,7 +177,11 @@ router.get(
   validate({ query: exportQuerySchema }),
   contactsController.exportContacts,
 );
-router.get("/fields", contactsController.listDynamicFields);
+router.get(
+  "/fields",
+  validate({ query: ownerQuerySchema }),
+  contactsController.listDynamicFields,
+);
 router.post(
   "/fields",
   validate({ body: createDynamicFieldSchema }),
@@ -193,7 +203,11 @@ router.post(
   contactsController.createContact,
 );
 
-router.get("/tags", contactsController.listTags);
+router.get(
+  "/tags",
+  validate({ query: ownerQuerySchema }),
+  contactsController.listTags,
+);
 router.post(
   "/tags",
   validate({ body: createTagSchema }),

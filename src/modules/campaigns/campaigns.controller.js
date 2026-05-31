@@ -3,13 +3,13 @@ const { sendOk } = require("../../common/http");
 const campaignsService = require("./campaigns.service");
 
 const listCampaigns = asyncHandler(async (req, res) => {
-  const data = await campaignsService.listCampaigns(req.user.id, req.query);
+  const data = await campaignsService.listCampaigns(req.user, req.query);
   return sendOk(res, data, "Fetched campaigns");
 });
 
 const getCampaignById = asyncHandler(async (req, res) => {
   const data = await campaignsService.getCampaignById(
-    req.user.id,
+    req.user,
     req.params.id,
   );
   return sendOk(res, data, "Fetched campaign");
@@ -17,7 +17,7 @@ const getCampaignById = asyncHandler(async (req, res) => {
 
 const listCampaignRecipients = asyncHandler(async (req, res) => {
   const data = await campaignsService.listCampaignRecipients(
-    req.user.id,
+    req.user,
     req.params.id,
     req.query,
   );

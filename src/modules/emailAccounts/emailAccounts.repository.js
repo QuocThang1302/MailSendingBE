@@ -1,7 +1,7 @@
 const { supabase } = require("../../config/supabase");
 
 const ACCOUNT_COLUMNS =
-  "id, email_address, display_name, smtp_host, smtp_port, smtp_username, use_tls, is_default, status, daily_limit, sent_today, last_used_at, created_at";
+  "id, user_id, email_address, display_name, smtp_host, smtp_port, smtp_username, use_tls, is_default, status, daily_limit, sent_today, last_used_at, created_at";
 
 const throwIfError = (error) => {
   if (error) {
@@ -9,15 +9,68 @@ const throwIfError = (error) => {
   }
 };
 
-const listEmailAccounts = async (userId) => {
-  const { data, error } = await supabase
+const unique = (values) => [...new Set(values.filter(Boolean))];
+
+const decorateOwnerRows = async (rows) => {
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+
+  const ownerIds = unique(rows.map((row) => row.user_id));
+  const { data, error } =
+    ownerIds.length > 0
+      ? await supabase
+          .from("users")
+          .select("id, name, email")
+          .in("id", ownerIds)
+      : { data: [], error: null };
+
+  throwIfError(error);
+
+  const ownerMap = new Map((data || []).map((row) => [row.id, row]));
+  return rows.map((row) => ({
+    ...row,
+    owner: row.user_id ? ownerMap.get(row.user_id) || null : null,
+  }));
+};
+
+const listEmailAccounts = async (userId, { status } = {}) => {
+  let builder = supabase
     .from("email_accounts")
     .select(ACCOUNT_COLUMNS)
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+    .eq("user_id", userId);
+
+  if (status) {
+    builder = builder.eq("status", status);
+  }
+
+  const { data, error } = await builder.order("created_at", {
+    ascending: false,
+  });
 
   throwIfError(error);
   return data || [];
+};
+
+const listAllEmailAccounts = async ({ userId, status }) => {
+  let builder = supabase
+    .from("email_accounts")
+    .select(ACCOUNT_COLUMNS);
+
+  if (userId) {
+    builder = builder.eq("user_id", userId);
+  }
+
+  if (status) {
+    builder = builder.eq("status", status);
+  }
+
+  const { data, error } = await builder.order("created_at", {
+    ascending: false,
+  });
+
+  throwIfError(error);
+  return decorateOwnerRows(data || []);
 };
 
 const findEmailAccountById = async (userId, accountId) => {
@@ -30,6 +83,18 @@ const findEmailAccountById = async (userId, accountId) => {
 
   throwIfError(error);
   return data || null;
+};
+
+const findEmailAccountByIdForAdmin = async (accountId) => {
+  const { data, error } = await supabase
+    .from("email_accounts")
+    .select(ACCOUNT_COLUMNS)
+    .eq("id", accountId)
+    .maybeSingle();
+
+  throwIfError(error);
+  const [decorated] = await decorateOwnerRows(data ? [data] : []);
+  return decorated || null;
 };
 
 const findEmailAccountForSmtp = async (userId, accountId) => {
@@ -158,7 +223,9 @@ const setDefaultEmailAccount = async (userId, accountId) => {
 
 module.exports = {
   listEmailAccounts,
+  listAllEmailAccounts,
   findEmailAccountById,
+  findEmailAccountByIdForAdmin,
   findEmailAccountForSmtp,
   createEmailAccount,
   updateEmailAccount,

@@ -3,7 +3,7 @@ const { sendOk } = require("../../common/http");
 const dashboardService = require("./dashboard.service");
 
 const getOverview = asyncHandler(async (req, res) => {
-  const data = await dashboardService.getOverview(req.user.id);
+  const data = await dashboardService.getOverview(req.user);
   return sendOk(res, data, "Fetched dashboard overview");
 });
 

@@ -58,6 +58,10 @@ psql -f src/scripts/sql/20260330_add_template_designer_tables.sql
 psql -f src/scripts/sql/20260331_add_campaign_scheduler_queue.sql
 ```
 
+6. Run role constraint migration:
+
+```bash
+psql -f src/scripts/sql/20260531_restrict_user_roles.sql
 6. Run individual email tracking migration:
 
 ```bash
@@ -103,8 +107,12 @@ AI media generation for email:
 - `AI_MEDIA_PROVIDER` controls the provider. Use `pollinations` for Pollinations or `openai` for OpenAI.
 - For Pollinations, configure `POLLINATIONS_API_KEY` on the backend only if your account/API tier requires it.
 - For OpenAI, configure `OPENAI_API_KEY` on the backend only.
-- Generated files are stored in `public/media/generated` and served from `/media/generated/...`.
-- Set `PUBLIC_BASE_URL` or `MEDIA_PUBLIC_BASE_URL` to a public URL before sending real emails, because email clients must be able to fetch the image/video thumbnail over the internet.
+- `MEDIA_STORAGE_PROVIDER=supabase` uploads generated files to Supabase Storage and returns a public Supabase URL.
+- `SUPABASE_STORAGE_BUCKET` controls the public bucket name. Default: `generated-media`.
+- `SUPABASE_STORAGE_FOLDER` controls the folder inside the bucket. Default: `generated`.
+- Use a Supabase service-role/secret key on the backend if you want the server to create the bucket automatically.
+- If `MEDIA_STORAGE_PROVIDER=local`, generated files are stored in `public/media/generated` and served from `/media/generated/...`.
+- With local storage, set `PUBLIC_BASE_URL` or `MEDIA_PUBLIC_BASE_URL` to a public URL before sending real emails, because email clients must be able to fetch the image/video thumbnail over the internet.
 - Use image URLs directly in email HTML.
 - For video, use a thumbnail or button that links to the stored MP4 or a landing page. Most email clients do not reliably play embedded video.
 
@@ -167,6 +175,22 @@ Designer notes:
 - `GET /ai-media/videos/:videoId`
 - `POST /ai-media/videos/:videoId/download`
 - `POST /ai-media/video-email-snippet`
+- `GET /admin/overview` (admin only)
+- `GET /admin/users` (admin only)
+- `GET /admin/users/:id` (admin only)
+- `PATCH /admin/users/:id/role` (admin only)
+- `PATCH /admin/users/:id/status` (admin only)
+- `DELETE /admin/templates/:id` (admin only)
+- `POST /admin/campaigns/:id/pause` (admin only)
+- `DELETE /admin/campaigns/:id` (admin only)
+
+Role-aware read routes:
+
+- `user` sees only their own contacts, tags, fields, email accounts, templates, campaigns, and dashboard data.
+- `admin` sees system-wide data on the same read routes, for example `GET /contacts`, `GET /email-accounts`, `GET /templates`, `GET /campaigns`, and `GET /dashboard/overview`.
+- `GET /email-accounts` never exposes stored SMTP passwords.
+- Admin read routes that support owner filtering accept `userId`, for example `GET /contacts?userId=5`, `GET /email-accounts?userId=5`, `GET /templates?userId=5`, and `GET /campaigns?userId=5`.
+- Admin management actions stay under `/admin/*`, such as role changes, user deactivation, deleting templates, pausing campaigns, and deleting campaigns.
 
 AI media examples:
 
@@ -219,3 +243,7 @@ Protected routes use Bearer token:
 ```http
 Authorization: Bearer <jwt_token>
 ```
+
+Roles are `user` and `admin`. Read routes are role-aware: `user` gets their own
+data, while `admin` gets system-wide data and can filter by `userId` where
+supported. Cross-user management actions are available only under `/admin/*`.

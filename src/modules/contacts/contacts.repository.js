@@ -1,7 +1,7 @@
 const { supabase } = require("../../config/supabase");
 
 const CONTACT_COLUMNS =
-  "id, email, first_name, last_name, phone, company, city, country, language, email_status, source, created_at, updated_at";
+  "id, user_id, email, first_name, last_name, phone, company, city, country, language, email_status, source, created_at, updated_at";
 
 const throwIfError = (error) => {
   if (error) {
@@ -15,6 +15,31 @@ const chunkArray = (items, size) => {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
+};
+
+const unique = (values) => [...new Set(values.filter(Boolean))];
+
+const decorateOwnerRows = async (rows) => {
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+
+  const ownerIds = unique(rows.map((row) => row.user_id));
+  const { data, error } =
+    ownerIds.length > 0
+      ? await supabase
+          .from("users")
+          .select("id, name, email")
+          .in("id", ownerIds)
+      : { data: [], error: null };
+
+  throwIfError(error);
+
+  const ownerMap = new Map((data || []).map((row) => [row.id, row]));
+  return rows.map((row) => ({
+    ...row,
+    owner: row.user_id ? ownerMap.get(row.user_id) || null : null,
+  }));
 };
 
 const mapContactPayloadToRow = (userId, payload) => ({
@@ -31,16 +56,25 @@ const mapContactPayloadToRow = (userId, payload) => ({
   source: payload.source || "import",
 });
 
-const listContacts = async (
-  userId,
-  { search, status, city, tagId, page, pageSize },
-) => {
+const listContactsByScope = async ({
+  scopeUserId,
+  includeOwners = false,
+  search,
+  status,
+  city,
+  tagId,
+  page,
+  pageSize,
+}) => {
   const offset = (page - 1) * pageSize;
 
   let builder = supabase
     .from("email_contacts")
-    .select(CONTACT_COLUMNS, { count: "exact" })
-    .eq("user_id", userId);
+    .select(CONTACT_COLUMNS, { count: "exact" });
+
+  if (scopeUserId) {
+    builder = builder.eq("user_id", scopeUserId);
+  }
 
   if (status) {
     builder = builder.eq("email_status", status);
@@ -51,12 +85,13 @@ const listContacts = async (
   }
 
   if (tagId) {
-    const { data: ownedTag, error: ownedTagError } = await supabase
-      .from("contact_tags")
-      .select("id")
-      .eq("id", tagId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    let tagBuilder = supabase.from("contact_tags").select("id").eq("id", tagId);
+    if (scopeUserId) {
+      tagBuilder = tagBuilder.eq("user_id", scopeUserId);
+    }
+
+    const { data: ownedTag, error: ownedTagError } =
+      await tagBuilder.maybeSingle();
     throwIfError(ownedTagError);
 
     if (!ownedTag) {
@@ -102,7 +137,7 @@ const listContacts = async (
   if (contactIds.length === 0) {
     return {
       total: count || 0,
-      rows,
+      rows: includeOwners ? await decorateOwnerRows(rows) : rows,
     };
   }
 
@@ -117,11 +152,16 @@ const listContacts = async (
   ];
   let tagsById = new Map();
   if (tagIds.length > 0) {
-    const { data: tags, error: tagsError } = await supabase
+    let tagsBuilder = supabase
       .from("contact_tags")
       .select("id, tag_name, color")
-      .eq("user_id", userId)
       .in("id", tagIds);
+
+    if (scopeUserId) {
+      tagsBuilder = tagsBuilder.eq("user_id", scopeUserId);
+    }
+
+    const { data: tags, error: tagsError } = await tagsBuilder;
     throwIfError(tagsError);
     tagsById = new Map((tags || []).map((tag) => [tag.id, tag]));
   }
@@ -134,16 +174,52 @@ const listContacts = async (
     tagIdsByContact.get(mapping.contact_id).push(mapping.tag_id);
   }
 
+  const decoratedRows = rows.map((row) => ({
+    ...row,
+    tags: (tagIdsByContact.get(row.id) || [])
+      .map((id) => tagsById.get(id))
+      .filter(Boolean),
+  }));
+
   return {
     total: count || 0,
-    rows: rows.map((row) => ({
-      ...row,
-      tags: (tagIdsByContact.get(row.id) || [])
-        .map((id) => tagsById.get(id))
-        .filter(Boolean),
-    })),
+    rows: includeOwners ? await decorateOwnerRows(decoratedRows) : decoratedRows,
   };
 };
+
+const listContacts = async (
+  userId,
+  { search, status, city, tagId, page, pageSize },
+) =>
+  listContactsByScope({
+    scopeUserId: userId,
+    search,
+    status,
+    city,
+    tagId,
+    page,
+    pageSize,
+  });
+
+const listAllContacts = async ({
+  userId,
+  search,
+  status,
+  city,
+  tagId,
+  page,
+  pageSize,
+}) =>
+  listContactsByScope({
+    scopeUserId: userId || null,
+    includeOwners: true,
+    search,
+    status,
+    city,
+    tagId,
+    page,
+    pageSize,
+  });
 
 const findContactById = async (userId, contactId) => {
   const { data, error } = await supabase
@@ -155,6 +231,18 @@ const findContactById = async (userId, contactId) => {
 
   throwIfError(error);
   return data || null;
+};
+
+const findContactByIdForAdmin = async (contactId) => {
+  const { data, error } = await supabase
+    .from("email_contacts")
+    .select(CONTACT_COLUMNS)
+    .eq("id", contactId)
+    .maybeSingle();
+
+  throwIfError(error);
+  const [decorated] = await decorateOwnerRows(data ? [data] : []);
+  return decorated || null;
 };
 
 const createContact = async (userId, payload) => {
@@ -195,11 +283,17 @@ const findContactsByEmails = async (userId, emails) => {
   return data || [];
 };
 
-const listContactsForExport = async (userId, { search, status, city }) => {
+const listContactsForExportByScope = async (
+  scopeUserId,
+  { search, status, city },
+) => {
   let builder = supabase
     .from("email_contacts")
-    .select(CONTACT_COLUMNS)
-    .eq("user_id", userId);
+    .select(CONTACT_COLUMNS);
+
+  if (scopeUserId) {
+    builder = builder.eq("user_id", scopeUserId);
+  }
 
   if (status) {
     builder = builder.eq("email_status", status);
@@ -222,6 +316,12 @@ const listContactsForExport = async (userId, { search, status, city }) => {
   throwIfError(error);
   return data || [];
 };
+
+const listContactsForExport = async (userId, filters) =>
+  listContactsForExportByScope(userId, filters);
+
+const listAllContactsForExport = async ({ userId, search, status, city }) =>
+  listContactsForExportByScope(userId || null, { search, status, city });
 
 const bulkInsertContacts = async (userId, payloads) => {
   const emails = payloads.map((item) => item.email);
@@ -379,6 +479,45 @@ const listTags = async (userId) => {
   }));
 };
 
+const listAllTags = async ({ userId }) => {
+  let builder = supabase
+    .from("contact_tags")
+    .select("id, user_id, tag_name, color, created_at");
+
+  if (userId) {
+    builder = builder.eq("user_id", userId);
+  }
+
+  const { data, error } = await builder.order("created_at", {
+    ascending: false,
+  });
+
+  throwIfError(error);
+  const tags = data || [];
+  const tagIds = tags.map((tag) => tag.id);
+  if (tagIds.length === 0) {
+    return [];
+  }
+
+  const { data: mappings, error: mappingsError } = await supabase
+    .from("contact_tag_map")
+    .select("tag_id")
+    .in("tag_id", tagIds);
+  throwIfError(mappingsError);
+
+  const counts = new Map();
+  for (const mapping of mappings || []) {
+    counts.set(mapping.tag_id, (counts.get(mapping.tag_id) || 0) + 1);
+  }
+
+  const rows = tags.map((tag) => ({
+    ...tag,
+    contact_count: counts.get(tag.id) || 0,
+  }));
+
+  return decorateOwnerRows(rows);
+};
+
 const listDynamicFields = async (userId) => {
   const { data, error } = await supabase
     .from("dynamic_fields")
@@ -388,6 +527,25 @@ const listDynamicFields = async (userId) => {
 
   throwIfError(error);
   return data || [];
+};
+
+const listAllDynamicFields = async ({ userId }) => {
+  let builder = supabase
+    .from("dynamic_fields")
+    .select(
+      "id, user_id, field_name, field_label, field_type, is_required, created_at",
+    );
+
+  if (userId) {
+    builder = builder.eq("user_id", userId);
+  }
+
+  const { data, error } = await builder.order("created_at", {
+    ascending: false,
+  });
+
+  throwIfError(error);
+  return decorateOwnerRows(data || []);
 };
 
 const createDynamicField = async (userId, payload) => {
@@ -689,8 +847,11 @@ const replaceContactTags = async (userId, contactId, tagIds) => {
 
 module.exports = {
   listContacts,
+  listAllContacts,
   listContactsForExport,
+  listAllContactsForExport,
   findContactById,
+  findContactByIdForAdmin,
   findContactsByEmails,
   createContact,
   bulkInsertContacts,
@@ -698,10 +859,12 @@ module.exports = {
   updateContact,
   deleteContact,
   listTags,
+  listAllTags,
   createTag,
   updateTag,
   deleteTag,
   listDynamicFields,
+  listAllDynamicFields,
   createDynamicField,
   updateDynamicField,
   deleteDynamicField,

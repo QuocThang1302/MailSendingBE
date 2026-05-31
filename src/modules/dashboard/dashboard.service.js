@@ -1,7 +1,10 @@
+const { isAdmin } = require("../../common/roles");
 const dashboardRepository = require("./dashboard.repository");
 
-const getOverview = async (userId) => {
-  const data = await dashboardRepository.getOverview(userId);
+const getOverview = async (actor) => {
+  const data = isAdmin(actor)
+    ? await dashboardRepository.getSystemOverview()
+    : await dashboardRepository.getOverview(actor.id);
 
   const sent = data.stats.total_sent || 0;
   const opened = data.stats.total_opened || 0;

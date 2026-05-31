@@ -1,4 +1,5 @@
 const ApiError = require("../../common/ApiError");
+const { isAdmin } = require("../../common/roles");
 const XLSX = require("xlsx");
 const campaignsRepository = require("./campaigns.repository");
 
@@ -26,6 +27,7 @@ const parseRecipientsFromFile = (file) => {
     type: "buffer",
     raw: false,
   });
+
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) {
     return [];
@@ -74,14 +76,43 @@ const mapCampaignError = (error) => {
   throw error;
 };
 
-const listCampaigns = async (userId, query) => {
+const listCampaigns = async (actor, query) => {
   const page = query.page || 1;
   const pageSize = query.pageSize || 20;
 
-  const result = await campaignsRepository.listCampaigns(userId, {
+  const result = isAdmin(actor)
+    ? await campaignsRepository.listAllCampaigns({
+        page,
+        pageSize,
+        status: query.status,
+        userId: query.userId,
+      })
+    : await campaignsRepository.listCampaigns(actor.id, {
+        page,
+        pageSize,
+        status: query.status,
+      });
+
+  return {
+    items: result.rows,
+    pagination: {
+      page,
+      pageSize,
+      total: result.total,
+      totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+    },
+  };
+};
+
+const listAllCampaigns = async (query) => {
+  const page = query.page || 1;
+  const pageSize = query.pageSize || 20;
+
+  const result = await campaignsRepository.listAllCampaigns({
     page,
     pageSize,
     status: query.status,
+    userId: query.userId,
   });
 
   return {
@@ -95,9 +126,18 @@ const listCampaigns = async (userId, query) => {
   };
 };
 
-const getCampaignById = async (userId, campaignId) => {
-  const campaign = await campaignsRepository.findCampaignById(
-    userId,
+const getCampaignById = async (actor, campaignId) => {
+  const campaign = isAdmin(actor)
+    ? await campaignsRepository.findCampaignByIdForAdmin(campaignId)
+    : await campaignsRepository.findCampaignById(actor.id, campaignId);
+  if (!campaign) {
+    throw new ApiError(404, "Campaign not found");
+  }
+  return campaign;
+};
+
+const getCampaignByIdForAdmin = async (campaignId) => {
+  const campaign = await campaignsRepository.findCampaignByIdForAdmin(
     campaignId,
   );
   if (!campaign) {
@@ -106,12 +146,42 @@ const getCampaignById = async (userId, campaignId) => {
   return campaign;
 };
 
-const listCampaignRecipients = async (userId, campaignId, query) => {
+const listCampaignRecipients = async (actor, campaignId, query) => {
   const page = query.page || 1;
   const pageSize = query.pageSize || 20;
 
-  const result = await campaignsRepository.listCampaignRecipients(
-    userId,
+  const result = isAdmin(actor)
+    ? await campaignsRepository.listCampaignRecipientsForAdmin(campaignId, {
+        page,
+        pageSize,
+        status: query.status,
+      })
+    : await campaignsRepository.listCampaignRecipients(actor.id, campaignId, {
+        page,
+        pageSize,
+        status: query.status,
+      });
+
+  if (!result) {
+    throw new ApiError(404, "Campaign not found");
+  }
+
+  return {
+    items: result.rows,
+    pagination: {
+      page,
+      pageSize,
+      total: result.total,
+      totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+    },
+  };
+};
+
+const listCampaignRecipientsForAdmin = async (campaignId, query) => {
+  const page = query.page || 1;
+  const pageSize = query.pageSize || 20;
+
+  const result = await campaignsRepository.listCampaignRecipientsForAdmin(
     campaignId,
     {
       page,
@@ -246,14 +316,35 @@ const pauseCampaign = async (userId, campaignId) => {
   return campaign;
 };
 
+const pauseAnyCampaign = async (campaignId) => {
+  const campaign = await campaignsRepository.pauseAnyCampaign(campaignId);
+  if (!campaign) {
+    throw new ApiError(404, "Campaign not found or cannot be paused");
+  }
+  return campaign;
+};
+
+const deleteCampaignByAdmin = async (campaignId) => {
+  const removed = await campaignsRepository.deleteCampaignByAdmin(campaignId);
+  if (!removed) {
+    throw new ApiError(404, "Campaign not found");
+  }
+  return { deleted: true };
+};
+
 module.exports = {
   listCampaigns,
+  listAllCampaigns,
   getCampaignById,
+  getCampaignByIdForAdmin,
   listCampaignRecipients,
+  listCampaignRecipientsForAdmin,
   getCampaignRecipientById,
   createCampaign,
   updateCampaign,
   importRecipients,
   startCampaign,
   pauseCampaign,
+  pauseAnyCampaign,
+  deleteCampaignByAdmin,
 };

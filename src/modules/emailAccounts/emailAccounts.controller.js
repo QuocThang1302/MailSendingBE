@@ -3,13 +3,13 @@ const { sendOk } = require("../../common/http");
 const emailAccountsService = require("./emailAccounts.service");
 
 const listEmailAccounts = asyncHandler(async (req, res) => {
-  const data = await emailAccountsService.listEmailAccounts(req.user.id);
+  const data = await emailAccountsService.listEmailAccounts(req.user, req.query);
   return sendOk(res, data, "Fetched email accounts");
 });
 
 const getEmailAccountById = asyncHandler(async (req, res) => {
   const data = await emailAccountsService.getEmailAccountById(
-    req.user.id,
+    req.user,
     req.params.id,
   );
   return sendOk(res, data, "Fetched email account");

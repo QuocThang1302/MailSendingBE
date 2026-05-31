@@ -3,12 +3,12 @@ const { sendOk } = require("../../common/http");
 const contactsService = require("./contacts.service");
 
 const listContacts = asyncHandler(async (req, res) => {
-  const data = await contactsService.listContacts(req.user.id, req.query);
+  const data = await contactsService.listContacts(req.user, req.query);
   return sendOk(res, data, "Fetched contacts");
 });
 
 const getContactById = asyncHandler(async (req, res) => {
-  const data = await contactsService.getContactById(req.user.id, req.params.id);
+  const data = await contactsService.getContactById(req.user, req.params.id);
   return sendOk(res, data, "Fetched contact");
 });
 
@@ -26,7 +26,7 @@ const importContacts = asyncHandler(async (req, res) => {
 });
 
 const exportContacts = asyncHandler(async (req, res) => {
-  const exported = await contactsService.exportContacts(req.user.id, req.query);
+  const exported = await contactsService.exportContacts(req.user, req.query);
 
   res.setHeader("Content-Type", exported.contentType);
   res.setHeader(
@@ -52,7 +52,7 @@ const deleteContact = asyncHandler(async (req, res) => {
 });
 
 const listTags = asyncHandler(async (req, res) => {
-  const data = await contactsService.listTags(req.user.id);
+  const data = await contactsService.listTags(req.user, req.query);
   return sendOk(res, data, "Fetched contact tags");
 });
 
@@ -84,7 +84,7 @@ const listTagRecipients = asyncHandler(async (req, res) => {
 });
 
 const listDynamicFields = asyncHandler(async (req, res) => {
-  const data = await contactsService.listDynamicFields(req.user.id);
+  const data = await contactsService.listDynamicFields(req.user, req.query);
   return sendOk(res, data, "Fetched dynamic fields");
 });
 

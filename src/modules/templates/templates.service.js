@@ -1,4 +1,5 @@
 const ApiError = require("../../common/ApiError");
+const { isAdmin } = require("../../common/roles");
 const templatesRepository = require("./templates.repository");
 
 const OWNER_ERROR_MESSAGE = "Only the template owner can modify this template";
@@ -10,14 +11,43 @@ const rethrowTemplateOwnershipError = (error) => {
   throw error;
 };
 
-const listTemplates = async (userId, query) => {
+const listTemplates = async (actor, query) => {
   const page = query.page || 1;
   const pageSize = query.pageSize || 20;
 
-  const result = await templatesRepository.listTemplates(userId, {
+  const result = isAdmin(actor)
+    ? await templatesRepository.listAllTemplates({
+        page,
+        pageSize,
+        isActive: query.isActive,
+        userId: query.userId,
+      })
+    : await templatesRepository.listTemplates(actor.id, {
+        page,
+        pageSize,
+        isActive: query.isActive,
+      });
+
+  return {
+    items: result.rows,
+    pagination: {
+      page,
+      pageSize,
+      total: result.total,
+      totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+    },
+  };
+};
+
+const listAllTemplates = async (query) => {
+  const page = query.page || 1;
+  const pageSize = query.pageSize || 20;
+
+  const result = await templatesRepository.listAllTemplates({
     page,
     pageSize,
     isActive: query.isActive,
+    userId: query.userId,
   });
 
   return {
@@ -31,9 +61,18 @@ const listTemplates = async (userId, query) => {
   };
 };
 
-const getTemplateById = async (userId, templateId) => {
-  const template = await templatesRepository.findTemplateById(
-    userId,
+const getTemplateById = async (actor, templateId) => {
+  const template = isAdmin(actor)
+    ? await templatesRepository.findTemplateByIdForAdmin(templateId)
+    : await templatesRepository.findTemplateById(actor.id, templateId);
+  if (!template) {
+    throw new ApiError(404, "Template not found");
+  }
+  return template;
+};
+
+const getTemplateByIdForAdmin = async (templateId) => {
+  const template = await templatesRepository.findTemplateByIdForAdmin(
     templateId,
   );
   if (!template) {
@@ -76,11 +115,26 @@ const deleteTemplate = async (actor, templateId) => {
   return { deleted: true };
 };
 
-const getTemplateDesigner = async (userId, templateId) => {
-  const draft = await templatesRepository.getTemplateDesigner(
-    userId,
-    templateId,
-  );
+const deleteAnyTemplate = async (actor, templateId) => {
+  let removed;
+  try {
+    removed = await templatesRepository.deleteAnyTemplate(actor, templateId);
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
+  if (!removed) {
+    throw new ApiError(404, "Template not found");
+  }
+  return { deleted: true };
+};
+
+const getTemplateDesigner = async (actor, templateId) => {
+  let draft;
+  try {
+    draft = await templatesRepository.getTemplateDesigner(actor, templateId);
+  } catch (error) {
+    rethrowTemplateOwnershipError(error);
+  }
   if (!draft) {
     throw new ApiError(404, "Template not found");
   }
@@ -193,7 +247,9 @@ const restoreTemplateDesignerVersion = async (
 
 module.exports = {
   listTemplates,
+  listAllTemplates,
   getTemplateById,
+  getTemplateByIdForAdmin,
   createTemplate,
   updateTemplate,
   getTemplateDesigner,
@@ -203,4 +259,5 @@ module.exports = {
   getTemplateDesignerVersion,
   restoreTemplateDesignerVersion,
   deleteTemplate,
+  deleteAnyTemplate,
 };
