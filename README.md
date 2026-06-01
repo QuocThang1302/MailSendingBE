@@ -144,6 +144,7 @@ Then update `users.password` with the generated hash.
 - `GET/POST /contacts/tags`
 - `PUT /contacts/:id/tags`
 - `GET/POST/PATCH/DELETE /templates`
+- `GET /templates/shared` (templates created by admins, available to all authenticated users)
 - `GET /templates/:id/designer`
 - `PUT /templates/:id/designer`
 - `POST /templates/:id/designer/publish`
@@ -226,6 +227,7 @@ Example designer layout:
 Role-aware read routes:
 
 - `user` sees only their own contacts, tags, fields, email accounts, templates, campaigns, and dashboard data.
+- `user` can also read admin-created shared templates through `GET /templates/shared`, and can read a shared template detail with `GET /templates/:id`.
 - `admin` sees system-wide data on the same read routes, for example `GET /contacts`, `GET /email-accounts`, `GET /templates`, `GET /campaigns`, and `GET /dashboard/overview`.
 - `GET /email-accounts` never exposes stored SMTP passwords.
 - Admin read routes that support owner filtering accept `userId`, for example `GET /contacts?userId=5`, `GET /email-accounts?userId=5`, `GET /templates?userId=5`, and `GET /campaigns?userId=5`.

@@ -7,6 +7,11 @@ const listTemplates = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Fetched templates");
 });
 
+const listSharedTemplates = asyncHandler(async (req, res) => {
+  const data = await templatesService.listSharedTemplates(req.query);
+  return sendOk(res, data, "Fetched shared templates");
+});
+
 const getTemplateById = asyncHandler(async (req, res) => {
   const data = await templatesService.getTemplateById(
     req.user,
@@ -92,6 +97,7 @@ const deleteTemplate = asyncHandler(async (req, res) => {
 
 module.exports = {
   listTemplates,
+  listSharedTemplates,
   getTemplateById,
   createTemplate,
   updateTemplate,

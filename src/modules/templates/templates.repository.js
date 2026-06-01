@@ -1,5 +1,5 @@
 const { supabase } = require("../../config/supabase");
-const { isAdmin } = require("../../common/roles");
+const { ROLES, isAdmin } = require("../../common/roles");
 const { renderTemplateLayout } = require("./templateRenderer");
 
 const TEMPLATE_OWNER_FORBIDDEN = "TEMPLATE_OWNER_FORBIDDEN";
@@ -44,6 +44,16 @@ const decorateTemplateRows = async (rows) => {
 const decorateTemplateRow = async (row) => {
   const [decorated] = await decorateTemplateRows(row ? [row] : []);
   return decorated || null;
+};
+
+const listAdminUserIds = async () => {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id")
+    .eq("role", ROLES.ADMIN);
+
+  throwIfError(error);
+  return (data || []).map((row) => row.id);
 };
 
 const findTemplateOwner = async (templateId) => {
@@ -114,12 +124,61 @@ const listTemplates = async (userId, { page, pageSize, isActive }) => {
   };
 };
 
+const listAdminTemplates = async ({ page, pageSize, isActive }) => {
+  const adminUserIds = await listAdminUserIds();
+  if (adminUserIds.length === 0) {
+    return {
+      total: 0,
+      rows: [],
+    };
+  }
+
+  const offset = (page - 1) * pageSize;
+
+  let builder = supabase
+    .from("email_templates")
+    .select(LIST_COLUMNS, { count: "exact" })
+    .in("user_id", adminUserIds);
+
+  if (isActive !== undefined) {
+    builder = builder.eq("is_active", isActive);
+  }
+
+  const { data, count, error } = await builder
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  throwIfError(error);
+
+  return {
+    total: count || 0,
+    rows: await decorateTemplateRows(data || []),
+  };
+};
+
 const findTemplateById = async (userId, templateId) => {
   const { data, error } = await supabase
     .from("email_templates")
     .select(DETAIL_COLUMNS)
     .eq("id", templateId)
     .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfError(error);
+  return decorateTemplateRow(data);
+};
+
+const findAdminTemplateById = async (templateId) => {
+  const adminUserIds = await listAdminUserIds();
+  if (adminUserIds.length === 0) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("email_templates")
+    .select(DETAIL_COLUMNS)
+    .eq("id", templateId)
+    .in("user_id", adminUserIds)
     .maybeSingle();
 
   throwIfError(error);
@@ -646,8 +705,10 @@ const restoreTemplateDesignerVersion = async (
 module.exports = {
   TEMPLATE_OWNER_FORBIDDEN,
   listTemplates,
+  listAdminTemplates,
   listAllTemplates,
   findTemplateById,
+  findAdminTemplateById,
   findTemplateByIdForAdmin,
   createTemplate,
   updateTemplate,
