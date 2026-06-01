@@ -15,6 +15,14 @@ const toArray = (value) => {
   return Array.isArray(value) ? value : [];
 };
 
+const toSafeNumber = (value, fallback, min, max) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+};
+
 const normalizeUrl = (value) => {
   if (!value) {
     return "#";
@@ -28,6 +36,17 @@ const normalizeUrl = (value) => {
     return text;
   }
   return "#";
+};
+
+const readColor = (props, keys, fallback) => {
+  const value = readText(props, keys, fallback).trim();
+  if (/^#[0-9a-f]{3,8}$/i.test(value)) {
+    return value;
+  }
+  if (/^(rgb|rgba)\(/i.test(value)) {
+    return value;
+  }
+  return fallback;
 };
 
 const renderChildren = (children) => {
@@ -70,8 +89,60 @@ const renderBlock = (block) => {
     block.props && typeof block.props === "object" ? block.props : {};
   const childrenHtml = renderChildren(block.children);
 
-  if (type === "section" || type === "container" || type === "column") {
-    return `<div style="padding: 8px 0;">${childrenHtml}</div>`;
+  if (type === "section" || type === "container") {
+    const padding = toSafeNumber(props.padding, 8, 0, 80);
+    const background = readColor(props, ["background", "backgroundColor"], "transparent");
+    const align = escapeAttribute(readText(props, ["align"], "left"));
+    return [
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${background};">`,
+      "  <tr>",
+      `    <td style="padding:${padding}px 0;text-align:${align};">`,
+      childrenHtml,
+      "    </td>",
+      "  </tr>",
+      "</table>",
+    ].join("\n");
+  }
+
+  if (type === "column") {
+    return childrenHtml;
+  }
+
+  if (type === "columns" || type === "grid") {
+    const columns = toArray(block.children);
+    const gap = toSafeNumber(props.gap, 24, 0, 48);
+    const columnsPerRow = toSafeNumber(
+      props.columns || props.columnsPerRow,
+      2,
+      1,
+      4,
+    );
+    const rows = [];
+
+    for (let index = 0; index < columns.length; index += columnsPerRow) {
+      const rowItems = columns.slice(index, index + columnsPerRow);
+      const cells = rowItems
+        .map((column, columnIndex) => {
+          const width = Math.floor(100 / columnsPerRow);
+          const paddingLeft = columnIndex === 0 ? 0 : Math.floor(gap / 2);
+          const paddingRight =
+            columnIndex === rowItems.length - 1 ? 0 : Math.ceil(gap / 2);
+          return [
+            `<td class="email-stack" width="${width}%" valign="top" style="width:${width}%;padding:0 ${paddingRight}px ${gap}px ${paddingLeft}px;">`,
+            renderBlock(column),
+            "</td>",
+          ].join("\n");
+        })
+        .join("\n");
+
+      rows.push(`<tr>${cells}</tr>`);
+    }
+
+    return [
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">',
+      rows.join("\n"),
+      "</table>",
+    ].join("\n");
   }
 
   if (type === "heading") {
@@ -95,6 +166,7 @@ const renderBlock = (block) => {
     const src = escapeAttribute(readText(props, ["src", "url"]));
     const alt = escapeAttribute(readText(props, ["alt", "title"], "image"));
     const width = Number.parseInt(props.width, 10);
+    const radius = toSafeNumber(props.radius ?? props.borderRadius, 0, 0, 32);
     const styleWidth =
       Number.isFinite(width) && width > 0
         ? `max-width: ${width}px;`
@@ -102,7 +174,7 @@ const renderBlock = (block) => {
     if (!src) {
       return "";
     }
-    return `<img src="${src}" alt="${alt}" style="display: block; ${styleWidth} height: auto; margin: 0 0 12px;" />`;
+    return `<img src="${src}" alt="${alt}" style="display: block; width: 100%; ${styleWidth} height: auto; margin: 0 0 12px; border: 0; border-radius: ${radius}px;" />`;
   }
 
   if (type === "qrcode" || type === "qr") {
@@ -140,6 +212,51 @@ const renderBlock = (block) => {
     return `<div style="margin: 0 0 12px;"><a href="${href}" style="display: inline-block; padding: 10px 18px; background: #1f2937; color: #ffffff; text-decoration: none; border-radius: 6px;">${label}</a></div>`;
   }
 
+  if (type === "link" || type === "cta") {
+    const label = escapeHtml(readText(props, ["text", "label"], "Learn more"));
+    const href = escapeAttribute(
+      normalizeUrl(readText(props, ["url", "href"], "#")),
+    );
+    const color = readColor(props, ["color"], "#0b57d0");
+    return `<a href="${href}" style="color:${color};font-size:16px;line-height:24px;text-decoration:none;">${label}</a>`;
+  }
+
+  if (type === "featurecard" || type === "feature-card") {
+    const imageUrl = escapeAttribute(readText(props, ["imageUrl", "image", "src", "url"]));
+    const imageAlt = escapeAttribute(readText(props, ["imageAlt", "alt", "title"], ""));
+    const title = escapeHtml(readText(props, ["title", "heading"], ""));
+    const description = escapeHtml(
+      readText(props, ["description", "body", "text", "content"], ""),
+    ).replace(/\n/g, "<br />");
+    const linkLabel = escapeHtml(
+      readText(props, ["linkLabel", "linkText", "ctaLabel", "label"], ""),
+    );
+    const linkUrl = escapeAttribute(
+      normalizeUrl(readText(props, ["linkUrl", "href", "ctaUrl"], "#")),
+    );
+    const imageRadius = toSafeNumber(props.imageRadius ?? props.radius, 18, 0, 32);
+    const imageHtml = imageUrl
+      ? `<img src="${imageUrl}" width="100%" alt="${imageAlt}" style="display:block;width:100%;height:auto;border:0;border-radius:${imageRadius}px;margin:0 0 24px;" />`
+      : "";
+    const titleHtml = title
+      ? `<h2 style="margin:0 0 8px;color:#202124;font-size:22px;line-height:30px;font-weight:400;">${title}</h2>`
+      : "";
+    const descriptionHtml = description
+      ? `<p style="margin:0 0 16px;color:#5f6368;font-size:16px;line-height:24px;">${description}</p>`
+      : "";
+    const linkHtml = linkLabel
+      ? `<a href="${linkUrl}" style="color:#0b57d0;font-size:16px;line-height:24px;text-decoration:none;">${linkLabel}</a>`
+      : "";
+
+    return [
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">',
+      "  <tr>",
+      `    <td style="padding:0 0 16px;">${imageHtml}${titleHtml}${descriptionHtml}${linkHtml}${childrenHtml}</td>`,
+      "  </tr>",
+      "</table>",
+    ].join("\n");
+  }
+
   if (type === "divider") {
     return '<hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 12px 0;" />';
   }
@@ -173,13 +290,28 @@ const collectText = (blocks) => {
 
       const props =
         item.props && typeof item.props === "object" ? item.props : {};
-      const candidate = readText(
-        props,
-        ["text", "content", "label", "alt"],
-        "",
-      ).trim();
-      if (candidate) {
-        acc.push(candidate);
+      const textKeys = [
+        "title",
+        "heading",
+        "text",
+        "content",
+        "description",
+        "body",
+        "label",
+        "linkLabel",
+        "linkText",
+        "ctaLabel",
+        "alt",
+      ];
+
+      for (const key of textKeys) {
+        const candidate =
+          props[key] === undefined || props[key] === null
+            ? ""
+            : String(props[key]).trim();
+        if (candidate) {
+          acc.push(candidate);
+        }
       }
 
       if (Array.isArray(item.children) && item.children.length > 0) {
@@ -204,11 +336,27 @@ const renderTemplateLayout = (layout) => {
     '  <meta charset="utf-8" />',
     '  <meta name="viewport" content="width=device-width,initial-scale=1" />',
     "  <title>Email</title>",
+    "  <style>",
+    "    @media only screen and (max-width: 640px) {",
+    "      .email-wrapper { width: 100% !important; }",
+    "      .email-stack { display: block !important; width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; }",
+    "    }",
+    "  </style>",
     "</head>",
     '<body style="margin:0;padding:24px;background:#f9fafb;font-family:Arial,sans-serif;color:#111827;">',
-    '  <div style="max-width:640px;margin:0 auto;background:#ffffff;padding:24px;border-radius:8px;">',
+    '  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">',
+    "    <tr>",
+    '      <td align="center">',
+    '        <table role="presentation" class="email-wrapper" width="720" cellpadding="0" cellspacing="0" style="width:720px;max-width:100%;border-collapse:collapse;background:#ffffff;">',
+    "          <tr>",
+    '            <td style="padding:28px;">',
     body,
-    "  </div>",
+    "            </td>",
+    "          </tr>",
+    "        </table>",
+    "      </td>",
+    "    </tr>",
+    "  </table>",
     "</body>",
     "</html>",
   ].join("\n");
