@@ -39,6 +39,27 @@ const listTemplates = async (actor, query) => {
   };
 };
 
+const listSharedTemplates = async (query) => {
+  const page = query.page || 1;
+  const pageSize = query.pageSize || 20;
+
+  const result = await templatesRepository.listAdminTemplates({
+    page,
+    pageSize,
+    isActive: query.isActive,
+  });
+
+  return {
+    items: result.rows,
+    pagination: {
+      page,
+      pageSize,
+      total: result.total,
+      totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+    },
+  };
+};
+
 const listAllTemplates = async (query) => {
   const page = query.page || 1;
   const pageSize = query.pageSize || 20;
@@ -64,7 +85,8 @@ const listAllTemplates = async (query) => {
 const getTemplateById = async (actor, templateId) => {
   const template = isAdmin(actor)
     ? await templatesRepository.findTemplateByIdForAdmin(templateId)
-    : await templatesRepository.findTemplateById(actor.id, templateId);
+    : (await templatesRepository.findTemplateById(actor.id, templateId)) ||
+      (await templatesRepository.findAdminTemplateById(templateId));
   if (!template) {
     throw new ApiError(404, "Template not found");
   }
@@ -247,6 +269,7 @@ const restoreTemplateDesignerVersion = async (
 
 module.exports = {
   listTemplates,
+  listSharedTemplates,
   listAllTemplates,
   getTemplateById,
   getTemplateByIdForAdmin,

@@ -110,6 +110,11 @@ router.get(
   validate({ query: listQuerySchema }),
   templatesController.listTemplates,
 );
+router.get(
+  "/shared",
+  validate({ query: listQuerySchema.omit({ userId: true }) }),
+  templatesController.listSharedTemplates,
+);
 router.post(
   "/",
   validate({ body: createTemplateSchema }),
