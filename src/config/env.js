@@ -34,6 +34,18 @@ const env = {
   supabaseKey: process.env.SUPABASE_KEY || "",
   jwtSecret: process.env.JWT_SECRET || "change_me_in_production",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+  otpSecret:
+    process.env.OTP_SECRET ||
+    process.env.JWT_SECRET ||
+    "change_me_in_production",
+  otpExpiresMinutes: toInt(process.env.OTP_EXPIRES_MINUTES, 10),
+  otpMaxAttempts: toInt(process.env.OTP_MAX_ATTEMPTS, 5),
+  otpEmailFrom: process.env.OTP_EMAIL_FROM || "",
+  otpSmtpHost: process.env.OTP_SMTP_HOST || "",
+  otpSmtpPort: toInt(process.env.OTP_SMTP_PORT, 587),
+  otpSmtpUsername: process.env.OTP_SMTP_USERNAME || "",
+  otpSmtpPassword: process.env.OTP_SMTP_PASSWORD || "",
+  otpSmtpUseTls: toBool(process.env.OTP_SMTP_USE_TLS, true),
   trackingSecret:
     process.env.TRACKING_SECRET ||
     process.env.JWT_SECRET ||

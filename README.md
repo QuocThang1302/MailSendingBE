@@ -68,7 +68,13 @@ psql -f src/scripts/sql/20260531_restrict_user_roles.sql
 psql -f src/scripts/sql/20260527_add_individual_email_tracking.sql
 ```
 
-7. Start in development mode:
+7. Run auth OTP migration:
+
+```bash
+psql -f src/scripts/sql/20260601_add_auth_otp_codes.sql
+```
+
+8. Start in development mode:
 
 ```bash
 npm run dev
@@ -89,6 +95,15 @@ SMTP sending:
 - Required fields for an active sending account: `email_address`, `smtp_host`, `smtp_port`, optional `smtp_username`, `smtp_password`, `use_tls`.
 - `POST /campaigns/:id/start` now sends real emails, stores rendered content per recipient, and records SMTP failures in `campaign_recipients.error_message` / `email_logs`.
 - `POST /email-accounts/:id/test` sends a test email using that account. Body supports `toEmail`, `subject`, `message`.
+
+Auth OTP:
+
+- `POST /auth/register` now sends a 6-digit OTP and does not create the account immediately.
+- `POST /auth/register/verify-otp` verifies the OTP, creates the account, and returns the JWT token.
+- `POST /auth/password/request-otp` verifies the current password, sends an OTP to the logged-in user's email, and stores the pending password hash.
+- `POST /auth/password/verify-otp` verifies the OTP and applies the pending password change.
+- Configure `OTP_EMAIL_FROM`, `OTP_SMTP_HOST`, `OTP_SMTP_PORT`, `OTP_SMTP_USERNAME`, `OTP_SMTP_PASSWORD`, and `OTP_SMTP_USE_TLS` to send OTP emails. In non-production mode, missing OTP SMTP logs the OTP to the backend console for local testing.
+- OTP codes expire after `OTP_EXPIRES_MINUTES` and are limited by `OTP_MAX_ATTEMPTS`.
 
 Email tracking:
 
