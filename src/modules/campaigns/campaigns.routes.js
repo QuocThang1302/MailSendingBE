@@ -51,6 +51,10 @@ const updateCampaignSchema = z.object({
   recipientEmails: z.array(z.string().email().max(150)).max(50000).optional(),
 });
 
+const campaignRecipientSchema = z.object({
+  email: z.string().trim().email().max(150),
+});
+
 router.use(auth);
 
 router.get(
@@ -78,15 +82,35 @@ router.put(
   validate({ params: idParamSchema, body: updateCampaignSchema }),
   campaignsController.updateCampaign,
 );
+router.delete(
+  "/:id",
+  validate({ params: idParamSchema }),
+  campaignsController.deleteCampaign,
+);
 router.get(
   "/:id/recipients",
   validate({ params: idParamSchema, query: listQuerySchema }),
   campaignsController.listCampaignRecipients,
 );
+router.post(
+  "/:id/recipients",
+  validate({ params: idParamSchema, body: campaignRecipientSchema }),
+  campaignsController.createCampaignRecipient,
+);
 router.get(
   "/:id/recipients/:recipientId",
   validate({ params: recipientParamSchema }),
   campaignsController.getCampaignRecipientById,
+);
+router.patch(
+  "/:id/recipients/:recipientId",
+  validate({ params: recipientParamSchema, body: campaignRecipientSchema }),
+  campaignsController.updateCampaignRecipient,
+);
+router.delete(
+  "/:id/recipients/:recipientId",
+  validate({ params: recipientParamSchema }),
+  campaignsController.deleteCampaignRecipient,
 );
 router.post(
   "/:id/start",
@@ -97,6 +121,11 @@ router.post(
   "/:id/pause",
   validate({ params: idParamSchema }),
   campaignsController.pauseCampaign,
+);
+router.post(
+  "/:id/resume",
+  validate({ params: idParamSchema }),
+  campaignsController.resumeCampaign,
 );
 
 module.exports = router;

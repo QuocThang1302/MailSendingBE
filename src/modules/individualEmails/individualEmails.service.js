@@ -15,6 +15,7 @@ const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TRACKING_MIGRATION_FILE =
   "src/scripts/sql/20260527_add_individual_email_tracking.sql";
+const GMAIL_HOST_PATTERN = /(^|\.)gmail\.com$/i;
 
 const mapIndividualEmailError = (error) => {
   const message = String(error?.message || "");
@@ -56,6 +57,64 @@ const textToHtml = (value) =>
 
 const toSafeMessage = (value) =>
   String(value || "Unknown SMTP error").slice(0, 255);
+
+const getSmtpAccountDetails = (account) => {
+  const port = Number(account?.smtp_port || 0) || null;
+  return {
+    accountId: account?.id || null,
+    emailAddress: account?.email_address || null,
+    smtpHost: account?.smtp_host || null,
+    smtpPort: port,
+    smtpUsername: account?.smtp_username || null,
+    secure: port === 465,
+    useTls: account?.use_tls === true,
+  };
+};
+
+const buildSmtpErrorDetails = (account, reason) => ({
+  ...getSmtpAccountDetails(account),
+  reason,
+});
+
+const normalizeSmtpErrorMessage = (error) => {
+  const message =
+    error instanceof Error ? error.message : "Unknown SMTP error";
+
+  if (/Invalid login|Username and Password not accepted|EAUTH/i.test(message)) {
+    return `${message}. For Gmail, use a Google App Password, not your normal Gmail password.`;
+  }
+
+  if (/ETIMEDOUT|Connection timeout|Greeting never received|ESOCKET/i.test(message)) {
+    return `${message}. Check SMTP host/port and firewall. Gmail should use smtp.gmail.com with port 587 TLS or 465 SSL.`;
+  }
+
+  return message;
+};
+
+const validateSmtpAccountConfig = (account) => {
+  const port = Number(account.smtp_port || 0);
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ApiError(400, "Selected email account has an invalid SMTP port", {
+      ...getSmtpAccountDetails(account),
+      reason: "SMTP port must be between 1 and 65535",
+    });
+  }
+
+  if (GMAIL_HOST_PATTERN.test(String(account.smtp_host || ""))) {
+    const validGmailPort = port === 465 || port === 587;
+    if (!validGmailPort) {
+      throw new ApiError(
+        400,
+        "Gmail SMTP must use port 587 with TLS or 465 with SSL",
+        {
+          ...getSmtpAccountDetails(account),
+          reason: `Current port is ${port}. Use 587 or 465 for smtp.gmail.com.`,
+        },
+      );
+    }
+  }
+};
 
 const buildDisplayName = (contact, email) => {
   const firstName = String(contact?.first_name || "").trim();
@@ -204,6 +263,8 @@ const ensureSendingAccount = async (userId, emailAccountId) => {
     );
   }
 
+  validateSmtpAccountConfig(account);
+
   return account;
 };
 
@@ -255,8 +316,9 @@ const sendBatch = async (userId, payload, mode) => {
   try {
     await transporter.verify();
   } catch (error) {
+    const reason = normalizeSmtpErrorMessage(error);
     throw new ApiError(502, "SMTP connection failed", {
-      reason: error instanceof Error ? error.message : "Unknown SMTP error",
+      ...buildSmtpErrorDetails(account, reason),
     });
   }
 
@@ -370,8 +432,7 @@ const sendBatch = async (userId, payload, mode) => {
         sent_time: now,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown SMTP error";
+      const message = normalizeSmtpErrorMessage(error);
       if (emailRecord) {
         await individualEmailsRepository.updateIndividualEmailResult(
           userId,
@@ -417,7 +478,10 @@ const sendBatch = async (userId, payload, mode) => {
         ? "Failed to send preview email"
         : "Failed to send emails",
       {
-        reason: firstFailure?.error || "Unknown SMTP error",
+        ...buildSmtpErrorDetails(
+          account,
+          firstFailure?.error || "Unknown SMTP error",
+        ),
         results,
       },
     );

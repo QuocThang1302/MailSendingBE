@@ -71,6 +71,9 @@ const deleteTemplate = (actor, templateId) =>
 const pauseCampaign = (campaignId) =>
   campaignsService.pauseAnyCampaign(campaignId);
 
+const resumeCampaign = (campaignId) =>
+  campaignsService.resumeAnyCampaign(campaignId);
+
 const deleteCampaign = (campaignId) =>
   campaignsService.deleteCampaignByAdmin(campaignId);
 
@@ -82,5 +85,6 @@ module.exports = {
   updateUserStatus,
   deleteTemplate,
   pauseCampaign,
+  resumeCampaign,
   deleteCampaign,
 };

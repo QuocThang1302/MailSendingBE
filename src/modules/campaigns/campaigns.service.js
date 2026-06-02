@@ -64,6 +64,18 @@ const mapCampaignError = (error) => {
       "Campaign is already sending or sent and cannot be edited",
     );
   }
+  if (error.message === "RECIPIENT_NOT_FOUND") {
+    throw new ApiError(404, "Campaign recipient not found");
+  }
+  if (error.message === "RECIPIENT_EMAIL_EXISTS") {
+    throw new ApiError(409, "This email is already in the campaign audience");
+  }
+  if (error.message === "RECIPIENT_LOCKED") {
+    throw new ApiError(
+      409,
+      "This recipient has already been sent and cannot be edited",
+    );
+  }
   if (error.message === "TEMPLATE_NOT_FOUND") {
     throw new ApiError(404, "Template not found");
   }
@@ -233,6 +245,57 @@ const updateCampaign = async (userId, campaignId, payload) => {
   }
 };
 
+const createCampaignRecipient = async (userId, campaignId, payload) => {
+  try {
+    return await campaignsRepository.createCampaignRecipient(
+      userId,
+      campaignId,
+      payload,
+    );
+  } catch (error) {
+    mapCampaignError(error);
+  }
+};
+
+const updateCampaignRecipient = async (
+  userId,
+  campaignId,
+  recipientId,
+  payload,
+) => {
+  try {
+    return await campaignsRepository.updateCampaignRecipient(
+      userId,
+      campaignId,
+      recipientId,
+      payload,
+    );
+  } catch (error) {
+    mapCampaignError(error);
+  }
+};
+
+const deleteCampaignRecipient = async (userId, campaignId, recipientId) => {
+  try {
+    await campaignsRepository.deleteCampaignRecipient(
+      userId,
+      campaignId,
+      recipientId,
+    );
+    return { deleted: true };
+  } catch (error) {
+    mapCampaignError(error);
+  }
+};
+
+const deleteCampaign = async (userId, campaignId) => {
+  const removed = await campaignsRepository.deleteCampaign(userId, campaignId);
+  if (!removed) {
+    throw new ApiError(404, "Campaign not found or cannot be deleted");
+  }
+  return { deleted: true };
+};
+
 const importRecipients = async (_userId, { file }) => {
   const rows = parseRecipientsFromFile(file);
   const uniqueRecipients = [];
@@ -316,10 +379,26 @@ const pauseCampaign = async (userId, campaignId) => {
   return campaign;
 };
 
+const resumeCampaign = async (userId, campaignId) => {
+  const campaign = await campaignsRepository.resumeCampaign(userId, campaignId);
+  if (!campaign) {
+    throw new ApiError(404, "Campaign not found or cannot be resumed");
+  }
+  return campaign;
+};
+
 const pauseAnyCampaign = async (campaignId) => {
   const campaign = await campaignsRepository.pauseAnyCampaign(campaignId);
   if (!campaign) {
     throw new ApiError(404, "Campaign not found or cannot be paused");
+  }
+  return campaign;
+};
+
+const resumeAnyCampaign = async (campaignId) => {
+  const campaign = await campaignsRepository.resumeAnyCampaign(campaignId);
+  if (!campaign) {
+    throw new ApiError(404, "Campaign not found or cannot be resumed");
   }
   return campaign;
 };
@@ -342,9 +421,15 @@ module.exports = {
   getCampaignRecipientById,
   createCampaign,
   updateCampaign,
+  createCampaignRecipient,
+  updateCampaignRecipient,
+  deleteCampaignRecipient,
+  deleteCampaign,
   importRecipients,
   startCampaign,
   pauseCampaign,
+  resumeCampaign,
   pauseAnyCampaign,
+  resumeAnyCampaign,
   deleteCampaignByAdmin,
 };

@@ -45,6 +45,11 @@ const pauseCampaign = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Paused campaign");
 });
 
+const resumeCampaign = asyncHandler(async (req, res) => {
+  const data = await adminService.resumeCampaign(req.params.id);
+  return sendOk(res, data, "Resumed campaign");
+});
+
 const deleteCampaign = asyncHandler(async (req, res) => {
   const data = await adminService.deleteCampaign(req.params.id);
   return sendOk(res, data, "Deleted campaign");
@@ -58,5 +63,6 @@ module.exports = {
   updateUserStatus,
   deleteTemplate,
   pauseCampaign,
+  resumeCampaign,
   deleteCampaign,
 };

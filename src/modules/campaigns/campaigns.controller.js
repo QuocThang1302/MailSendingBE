@@ -47,6 +47,39 @@ const updateCampaign = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Updated campaign");
 });
 
+const createCampaignRecipient = asyncHandler(async (req, res) => {
+  const data = await campaignsService.createCampaignRecipient(
+    req.user.id,
+    req.params.id,
+    req.body,
+  );
+  return sendOk(res, data, "Added campaign recipient", 201);
+});
+
+const updateCampaignRecipient = asyncHandler(async (req, res) => {
+  const data = await campaignsService.updateCampaignRecipient(
+    req.user.id,
+    req.params.id,
+    req.params.recipientId,
+    req.body,
+  );
+  return sendOk(res, data, "Updated campaign recipient");
+});
+
+const deleteCampaignRecipient = asyncHandler(async (req, res) => {
+  const data = await campaignsService.deleteCampaignRecipient(
+    req.user.id,
+    req.params.id,
+    req.params.recipientId,
+  );
+  return sendOk(res, data, "Deleted campaign recipient");
+});
+
+const deleteCampaign = asyncHandler(async (req, res) => {
+  const data = await campaignsService.deleteCampaign(req.user.id, req.params.id);
+  return sendOk(res, data, "Deleted campaign");
+});
+
 const importRecipients = asyncHandler(async (req, res) => {
   const data = await campaignsService.importRecipients(req.user.id, {
     file: req.file,
@@ -64,6 +97,11 @@ const pauseCampaign = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Campaign paused");
 });
 
+const resumeCampaign = asyncHandler(async (req, res) => {
+  const data = await campaignsService.resumeCampaign(req.user.id, req.params.id);
+  return sendOk(res, data, "Campaign resumed");
+});
+
 module.exports = {
   listCampaigns,
   getCampaignById,
@@ -71,7 +109,12 @@ module.exports = {
   getCampaignRecipientById,
   createCampaign,
   updateCampaign,
+  createCampaignRecipient,
+  updateCampaignRecipient,
+  deleteCampaignRecipient,
+  deleteCampaign,
   importRecipients,
   startCampaign,
   pauseCampaign,
+  resumeCampaign,
 };
