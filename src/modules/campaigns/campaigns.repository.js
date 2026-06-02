@@ -5,6 +5,9 @@ const CAMPAIGN_COLUMNS =
   "id, user_id, campaign_name, template_id, email_account_id, segment_id, status, campaign_type, scheduled_time, started_at, completed_at, total_recipients, sent_count, open_count, click_count, bounce_count, unsubscribe_count, created_at, updated_at";
 const RECIPIENT_COLUMNS =
   "id, contact_id, email, status, rendered_subject, sent_time, open_time, click_time, open_count, click_count, error_message";
+const MUTABLE_RECIPIENT_STATUSES = ["pending", "failed", "bounced"];
+const PAUSABLE_CAMPAIGN_STATUSES = ["scheduled", "sending", "queued"];
+const TIMEZONE_SUFFIX_PATTERN = /(z|[+-]\d{2}:?\d{2})$/i;
 
 const throwIfError = (error) => {
   if (error) {
@@ -14,6 +17,23 @@ const throwIfError = (error) => {
 
 const unique = (values) => [...new Set(values.filter(Boolean))];
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
+const parseTimestamp = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const isoValue = TIMEZONE_SUFFIX_PATTERN.test(normalized)
+    ? normalized
+    : `${normalized.replace(" ", "T")}Z`;
+  const date = new Date(isoValue);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
 
 const EMAIL_ACCOUNT_SEND_COLUMNS =
   "id, email_address, display_name, smtp_host, smtp_port, smtp_username, smtp_password, use_tls, status, daily_limit, sent_today, last_used_at";
@@ -519,7 +539,7 @@ const createCampaign = async (userId, payload) => {
 const updateCampaign = async (userId, campaignId, payload) => {
   const { data: existing, error: existingError } = await supabase
     .from("campaigns")
-    .select("id, status, template_id, email_account_id, segment_id")
+    .select("id, status, sent_count, template_id, email_account_id, segment_id")
     .eq("id", campaignId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -529,7 +549,10 @@ const updateCampaign = async (userId, campaignId, payload) => {
     throw new Error("CAMPAIGN_NOT_FOUND");
   }
 
-  if (["sending", "sent"].includes(existing.status)) {
+  if (
+    existing.status === "sending" ||
+    (existing.status === "sent" && Number(existing.sent_count || 0) > 0)
+  ) {
     throw new Error("CAMPAIGN_LOCKED");
   }
 
@@ -604,6 +627,210 @@ const updateCampaign = async (userId, campaignId, payload) => {
     ...decorated,
     total_recipients: totalRecipients ?? decorated.total_recipients,
   };
+};
+
+const findEditableCampaignForRecipients = async (userId, campaignId) => {
+  const { data: campaign, error } = await supabase
+    .from("campaigns")
+    .select("id, status, sent_count")
+    .eq("id", campaignId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfError(error);
+
+  if (!campaign) {
+    return null;
+  }
+
+  if (
+    campaign.status === "sending" ||
+    (campaign.status === "sent" && Number(campaign.sent_count || 0) > 0)
+  ) {
+    throw new Error("CAMPAIGN_LOCKED");
+  }
+
+  return campaign;
+};
+
+const resolveContactIdByEmail = async (userId, email) => {
+  const { data, error } = await supabase
+    .from("email_contacts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("email_status", "active")
+    .eq("email", email)
+    .maybeSingle();
+
+  throwIfError(error);
+  return data?.id || null;
+};
+
+const ensureRecipientEmailAvailable = async (
+  campaignId,
+  email,
+  excludedRecipientId,
+) => {
+  let builder = supabase
+    .from("campaign_recipients")
+    .select("id")
+    .eq("campaign_id", campaignId)
+    .eq("email", email)
+    .limit(1);
+
+  if (excludedRecipientId) {
+    builder = builder.neq("id", excludedRecipientId);
+  }
+
+  const { data, error } = await builder.maybeSingle();
+  throwIfError(error);
+
+  if (data) {
+    throw new Error("RECIPIENT_EMAIL_EXISTS");
+  }
+};
+
+const refreshCampaignRecipientTotal = async (campaign, campaignId) => {
+  const { count, error: countError } = await supabase
+    .from("campaign_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campaignId);
+  throwIfError(countError);
+
+  const updates = {
+    total_recipients: count || 0,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (campaign.status === "sent" && Number(campaign.sent_count || 0) === 0) {
+    updates.status = "draft";
+    updates.completed_at = null;
+  }
+
+  const { error: updateError } = await supabase
+    .from("campaigns")
+    .update(updates)
+    .eq("id", campaignId);
+  throwIfError(updateError);
+
+  return count || 0;
+};
+
+const createCampaignRecipient = async (userId, campaignId, payload) => {
+  const campaign = await findEditableCampaignForRecipients(userId, campaignId);
+  if (!campaign) {
+    throw new Error("CAMPAIGN_NOT_FOUND");
+  }
+
+  const email = normalizeEmail(payload.email);
+  await ensureRecipientEmailAvailable(campaignId, email);
+  const contactId = await resolveContactIdByEmail(userId, email);
+
+  const { data, error } = await supabase
+    .from("campaign_recipients")
+    .insert({
+      campaign_id: campaignId,
+      contact_id: contactId,
+      email,
+      status: "pending",
+    })
+    .select(RECIPIENT_COLUMNS)
+    .maybeSingle();
+
+  throwIfError(error);
+  await refreshCampaignRecipientTotal(campaign, campaignId);
+  return data;
+};
+
+const updateCampaignRecipient = async (
+  userId,
+  campaignId,
+  recipientId,
+  payload,
+) => {
+  const campaign = await findEditableCampaignForRecipients(userId, campaignId);
+  if (!campaign) {
+    throw new Error("CAMPAIGN_NOT_FOUND");
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("campaign_recipients")
+    .select("id, status")
+    .eq("id", recipientId)
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+
+  throwIfError(existingError);
+
+  if (!existing) {
+    throw new Error("RECIPIENT_NOT_FOUND");
+  }
+
+  if (!MUTABLE_RECIPIENT_STATUSES.includes(existing.status)) {
+    throw new Error("RECIPIENT_LOCKED");
+  }
+
+  const email = normalizeEmail(payload.email);
+  await ensureRecipientEmailAvailable(campaignId, email, recipientId);
+  const contactId = await resolveContactIdByEmail(userId, email);
+
+  const { data, error } = await supabase
+    .from("campaign_recipients")
+    .update({
+      contact_id: contactId,
+      email,
+      status: "pending",
+      rendered_subject: null,
+      rendered_html: null,
+      sent_time: null,
+      open_time: null,
+      click_time: null,
+      open_count: 0,
+      click_count: 0,
+      error_message: null,
+    })
+    .eq("id", recipientId)
+    .eq("campaign_id", campaignId)
+    .select(RECIPIENT_COLUMNS)
+    .maybeSingle();
+
+  throwIfError(error);
+  await refreshCampaignRecipientTotal(campaign, campaignId);
+  return data;
+};
+
+const deleteCampaignRecipient = async (userId, campaignId, recipientId) => {
+  const campaign = await findEditableCampaignForRecipients(userId, campaignId);
+  if (!campaign) {
+    throw new Error("CAMPAIGN_NOT_FOUND");
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("campaign_recipients")
+    .select("id, status")
+    .eq("id", recipientId)
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+
+  throwIfError(existingError);
+
+  if (!existing) {
+    throw new Error("RECIPIENT_NOT_FOUND");
+  }
+
+  if (!MUTABLE_RECIPIENT_STATUSES.includes(existing.status)) {
+    throw new Error("RECIPIENT_LOCKED");
+  }
+
+  const { error } = await supabase
+    .from("campaign_recipients")
+    .delete()
+    .eq("id", recipientId)
+    .eq("campaign_id", campaignId);
+
+  throwIfError(error);
+  await refreshCampaignRecipientTotal(campaign, campaignId);
+  return true;
 };
 
 const validateCampaignDispatch = (campaign, template, emailAccount) => {
@@ -687,7 +914,11 @@ const startCampaign = async (userId, campaignId) => {
     return null;
   }
 
-  if (!["draft", "scheduled", "paused", "queued"].includes(campaign.status)) {
+  if (
+    !["draft", "scheduled", "paused", "queued", "failed"].includes(
+      campaign.status,
+    )
+  ) {
     throw new Error("INVALID_CAMPAIGN_STATUS");
   }
 
@@ -701,7 +932,6 @@ const startCampaign = async (userId, campaignId) => {
       .from("email_templates")
       .select(TEMPLATE_SEND_COLUMNS)
       .eq("id", campaign.template_id)
-      .eq("user_id", userId)
       .maybeSingle(),
     supabase
       .from("email_accounts")
@@ -876,9 +1106,22 @@ const startCampaign = async (userId, campaignId) => {
     throwIfError(accountUpdateError);
   }
 
+  const { count: remainingFailureCount, error: remainingFailureError } =
+    await supabase
+      .from("campaign_recipients")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", campaignId)
+      .in("status", ["failed", "bounced"]);
+  throwIfError(remainingFailureError);
+
   const completeDispatch = async (preservePause) => {
+    const nextStatus = preservePause
+      ? "paused"
+      : (remainingFailureCount || 0) > 0
+        ? "failed"
+        : "sent";
     const updates = {
-      status: preservePause ? "paused" : "sent",
+      status: nextStatus,
       sent_count: (campaign.sent_count || 0) + successCount,
       updated_at: new Date().toISOString(),
     };
@@ -930,11 +1173,14 @@ const pauseCampaign = async (userId, campaignId) => {
     })
     .eq("id", campaignId)
     .eq("user_id", userId)
-    .in("status", ["scheduled", "sending"])
+    .in("status", PAUSABLE_CAMPAIGN_STATUSES)
     .select("id, campaign_name, status, updated_at")
     .maybeSingle();
 
   throwIfError(error);
+  if (data) {
+    await pauseCampaignDispatchQueue(campaignId, now);
+  }
   return data || null;
 };
 
@@ -948,19 +1194,171 @@ const pauseAnyCampaign = async (campaignId) => {
       updated_at: now,
     })
     .eq("id", campaignId)
-    .in("status", ["scheduled", "sending", "queued"])
+    .in("status", PAUSABLE_CAMPAIGN_STATUSES)
     .select("id, user_id, campaign_name, status, updated_at")
     .maybeSingle();
 
   throwIfError(error);
+  if (data) {
+    await pauseCampaignDispatchQueue(campaignId, now);
+  }
   return data || null;
 };
 
+const pauseCampaignDispatchQueue = async (campaignId, nowIso) => {
+  const { error } = await supabase
+    .from("campaign_dispatch_queue")
+    .update({
+      status: "paused",
+      locked_by: null,
+      locked_at: null,
+      updated_at: nowIso,
+    })
+    .eq("campaign_id", campaignId)
+    .in("status", ["pending", "processing", "failed"]);
+
+  throwIfError(error);
+};
+
+const shouldResumeImmediately = (campaign, nowMs) => {
+  if (campaign.started_at || Number(campaign.sent_count || 0) > 0) {
+    return true;
+  }
+
+  const scheduledTime = parseTimestamp(campaign.scheduled_time);
+  return !scheduledTime || scheduledTime.getTime() <= nowMs;
+};
+
+const enqueueResumedCampaignDispatch = async (campaign, nowIso) => {
+  const { error } = await supabase.from("campaign_dispatch_queue").upsert(
+    {
+      campaign_id: campaign.id,
+      user_id: campaign.user_id,
+      source: "resume",
+      status: "pending",
+      available_at: nowIso,
+      locked_by: null,
+      locked_at: null,
+      last_error: null,
+      updated_at: nowIso,
+    },
+    { onConflict: "campaign_id" },
+  );
+
+  throwIfError(error);
+};
+
+const resumeCampaignByScope = async ({ userId, campaignId }) => {
+  const nowIso = new Date().toISOString();
+
+  let campaignBuilder = supabase
+    .from("campaigns")
+    .select(
+      "id, user_id, campaign_name, status, scheduled_time, started_at, sent_count",
+    )
+    .eq("id", campaignId)
+    .eq("status", "paused");
+
+  if (userId) {
+    campaignBuilder = campaignBuilder.eq("user_id", userId);
+  }
+
+  const { data: campaign, error: campaignError } =
+    await campaignBuilder.maybeSingle();
+  throwIfError(campaignError);
+
+  if (!campaign) {
+    return null;
+  }
+
+  const resumeImmediately = shouldResumeImmediately(campaign, Date.now());
+  const nextStatus = resumeImmediately ? "queued" : "scheduled";
+
+  let updateBuilder = supabase
+    .from("campaigns")
+    .update({
+      status: nextStatus,
+      updated_at: nowIso,
+    })
+    .eq("id", campaignId)
+    .eq("status", "paused");
+
+  if (userId) {
+    updateBuilder = updateBuilder.eq("user_id", userId);
+  }
+
+  const { data, error } = await updateBuilder
+    .select("id, user_id, campaign_name, status, scheduled_time, updated_at")
+    .maybeSingle();
+
+  throwIfError(error);
+  if (!data) {
+    throw new Error("INVALID_CAMPAIGN_STATUS");
+  }
+
+  if (resumeImmediately) {
+    await enqueueResumedCampaignDispatch(campaign, nowIso);
+  }
+
+  return data;
+};
+
+const resumeCampaign = (userId, campaignId) =>
+  resumeCampaignByScope({ userId, campaignId });
+
+const resumeAnyCampaign = (campaignId) =>
+  resumeCampaignByScope({ campaignId });
+
 const deleteCampaignByAdmin = async (campaignId) => {
+  await clearCampaignDeleteBlockers(campaignId);
+
   const { data, error } = await supabase
     .from("campaigns")
     .delete()
     .eq("id", campaignId)
+    .select("id")
+    .maybeSingle();
+
+  throwIfError(error);
+  return !!data;
+};
+
+const clearCampaignDeleteBlockers = async (campaignId) => {
+  const { error: queueError } = await supabase
+    .from("campaign_dispatch_queue")
+    .delete()
+    .eq("campaign_id", campaignId);
+  throwIfError(queueError);
+
+  const { error: logsError } = await supabase
+    .from("email_logs")
+    .update({ campaign_id: null })
+    .eq("campaign_id", campaignId);
+  throwIfError(logsError);
+};
+
+const deleteCampaign = async (userId, campaignId) => {
+  const { data: ownedCampaign, error: ownedCampaignError } = await supabase
+    .from("campaigns")
+    .select("id")
+    .eq("id", campaignId)
+    .eq("user_id", userId)
+    .neq("status", "sending")
+    .maybeSingle();
+
+  throwIfError(ownedCampaignError);
+
+  if (!ownedCampaign) {
+    return false;
+  }
+
+  await clearCampaignDeleteBlockers(campaignId);
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("id", campaignId)
+    .eq("user_id", userId)
     .select("id")
     .maybeSingle();
 
@@ -1085,6 +1483,109 @@ const listPendingDispatchQueue = async (limit) => {
   return data || [];
 };
 
+const recoverStuckQueuedDispatchItems = async (limit, lockTtlSeconds) => {
+  const nowIso = new Date().toISOString();
+  const staleLockedAtIso = new Date(
+    Date.now() - Math.max(1, lockTtlSeconds || 60) * 1000,
+  ).toISOString();
+
+  const { data: queuedCampaigns, error: queuedCampaignsError } = await supabase
+    .from("campaigns")
+    .select("id, user_id")
+    .eq("status", "queued")
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+  throwIfError(queuedCampaignsError);
+
+  let recovered = 0;
+  for (const campaign of queuedCampaigns || []) {
+    const { data: queueItem, error: queueItemError } = await supabase
+      .from("campaign_dispatch_queue")
+      .select("id, source, status, locked_at")
+      .eq("campaign_id", campaign.id)
+      .maybeSingle();
+    throwIfError(queueItemError);
+
+    if (queueItem?.status === "pending") {
+      continue;
+    }
+
+    if (
+      queueItem?.status === "processing" &&
+      queueItem.locked_at &&
+      new Date(queueItem.locked_at).getTime() >
+        new Date(staleLockedAtIso).getTime()
+    ) {
+      continue;
+    }
+
+    const { error: updateError } = await supabase
+      .from("campaign_dispatch_queue")
+      .upsert(
+        {
+          campaign_id: campaign.id,
+          user_id: campaign.user_id,
+          source: queueItem?.source || "scheduled",
+          status: "pending",
+          available_at: nowIso,
+          locked_by: null,
+          locked_at: null,
+          last_error: null,
+          updated_at: nowIso,
+        },
+        { onConflict: "campaign_id" },
+      );
+    throwIfError(updateError);
+    recovered += 1;
+  }
+
+  return recovered;
+};
+
+const recoverFailedQueuedDispatchItems = async (limit) => {
+  const nowIso = new Date().toISOString();
+
+  const { data: failedItems, error: failedItemsError } = await supabase
+    .from("campaign_dispatch_queue")
+    .select("id, campaign_id")
+    .eq("status", "failed")
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+  throwIfError(failedItemsError);
+
+  let recovered = 0;
+  for (const item of failedItems || []) {
+    const { data: campaign, error: campaignError } = await supabase
+      .from("campaigns")
+      .select("id")
+      .eq("id", item.campaign_id)
+      .eq("status", "queued")
+      .maybeSingle();
+    throwIfError(campaignError);
+
+    if (!campaign) {
+      continue;
+    }
+
+    const { error: updateError } = await supabase
+      .from("campaign_dispatch_queue")
+      .update({
+        status: "pending",
+        available_at: nowIso,
+        locked_by: null,
+        locked_at: null,
+        last_error: null,
+        updated_at: nowIso,
+      })
+      .eq("id", item.id)
+      .eq("status", "failed");
+    throwIfError(updateError);
+    recovered += 1;
+  }
+
+  return recovered;
+};
+
 const claimDispatchQueueItem = async (queueId, workerId) => {
   const nowIso = new Date().toISOString();
 
@@ -1125,7 +1626,7 @@ const markDispatchQueueFailed = async (queueId, errorMessage) => {
 
   const { data: current, error: currentError } = await supabase
     .from("campaign_dispatch_queue")
-    .select("attempts")
+    .select("attempts, campaign_id, user_id")
     .eq("id", queueId)
     .maybeSingle();
   throwIfError(currentError);
@@ -1143,6 +1644,19 @@ const markDispatchQueueFailed = async (queueId, errorMessage) => {
     .eq("id", queueId);
 
   throwIfError(error);
+
+  if (current?.campaign_id) {
+    const { error: campaignError } = await supabase
+      .from("campaigns")
+      .update({
+        status: "failed",
+        updated_at: nowIso,
+      })
+      .eq("id", current.campaign_id)
+      .eq("user_id", current.user_id)
+      .eq("status", "queued");
+    throwIfError(campaignError);
+  }
 };
 
 module.exports = {
@@ -1155,15 +1669,23 @@ module.exports = {
   findCampaignRecipientById,
   createCampaign,
   updateCampaign,
+  createCampaignRecipient,
+  updateCampaignRecipient,
+  deleteCampaignRecipient,
+  deleteCampaign,
   startCampaign,
   pauseCampaign,
+  resumeCampaign,
   pauseAnyCampaign,
+  resumeAnyCampaign,
   deleteCampaignByAdmin,
   acquireWorkerLock,
   releaseWorkerLock,
   listDueScheduledCampaigns,
   enqueueCampaignDispatch,
   listPendingDispatchQueue,
+  recoverStuckQueuedDispatchItems,
+  recoverFailedQueuedDispatchItems,
   claimDispatchQueueItem,
   markDispatchQueueCompleted,
   markDispatchQueueFailed,

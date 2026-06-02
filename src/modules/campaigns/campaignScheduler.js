@@ -59,6 +59,10 @@ const runDispatchCycle = async (workerId) => {
   }
 
   try {
+    const recovered = await campaignsRepository.recoverStuckQueuedDispatchItems(
+      env.schedulerBatchSize,
+      env.schedulerLockTtlSeconds,
+    );
     const pendingItems = await campaignsRepository.listPendingDispatchQueue(
       env.schedulerBatchSize,
     );
@@ -94,6 +98,7 @@ const runDispatchCycle = async (workerId) => {
 
     return {
       skipped: false,
+      recovered,
       pending: pendingItems.length,
       processed,
       failed,

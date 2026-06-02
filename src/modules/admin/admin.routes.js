@@ -82,6 +82,11 @@ router.post(
   validate({ params: idParamSchema }),
   adminController.pauseCampaign,
 );
+router.post(
+  "/campaigns/:id/resume",
+  validate({ params: idParamSchema }),
+  adminController.resumeCampaign,
+);
 router.delete(
   "/campaigns/:id",
   validate({ params: idParamSchema }),
