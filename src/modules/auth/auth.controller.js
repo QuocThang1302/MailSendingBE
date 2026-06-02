@@ -32,6 +32,16 @@ const verifyPasswordChangeOtp = asyncHandler(async (req, res) => {
   return sendOk(res, data, "Password updated");
 });
 
+const requestPasswordResetOtp = asyncHandler(async (req, res) => {
+  const data = await authService.requestPasswordResetOtp(req.body);
+  return sendOk(res, data, "Password reset OTP sent");
+});
+
+const verifyPasswordResetOtp = asyncHandler(async (req, res) => {
+  const data = await authService.verifyPasswordResetOtp(req.body);
+  return sendOk(res, data, "Password reset successful");
+});
+
 const updateProfile = asyncHandler(async (req, res) => {
   const data = await authService.updateProfile(req.user.id, req.body);
   const message = data.requiresOtp
@@ -52,6 +62,8 @@ module.exports = {
   me,
   requestPasswordChangeOtp,
   verifyPasswordChangeOtp,
+  requestPasswordResetOtp,
+  verifyPasswordResetOtp,
   updateProfile,
   verifyProfileEmailOtp,
 };

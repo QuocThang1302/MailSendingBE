@@ -1,4 +1,4 @@
--- Allow profile email-change OTPs for databases that already created auth_otp_codes.
+-- Allow forgot-password OTPs for databases that already created auth_otp_codes.
 
 DO $$
 BEGIN

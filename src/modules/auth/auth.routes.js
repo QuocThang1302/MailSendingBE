@@ -32,6 +32,16 @@ const passwordChangeVerifySchema = z.object({
   otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits"),
 });
 
+const passwordResetRequestSchema = z.object({
+  email: z.string().email().max(150),
+});
+
+const passwordResetVerifySchema = z.object({
+  email: z.string().email().max(150),
+  otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits"),
+  newPassword: z.string().min(8).max(72),
+});
+
 const profileUpdateSchema = z.object({
   name: z.string().trim().min(2).max(150),
   email: z.string().email().max(150).optional(),
@@ -53,6 +63,16 @@ router.post(
   authController.verifyRegistrationOtp,
 );
 router.post("/login", validate({ body: loginSchema }), authController.login);
+router.post(
+  "/password/forgot/request-otp",
+  validate({ body: passwordResetRequestSchema }),
+  authController.requestPasswordResetOtp,
+);
+router.post(
+  "/password/forgot/verify-otp",
+  validate({ body: passwordResetVerifySchema }),
+  authController.verifyPasswordResetOtp,
+);
 router.get("/me", auth, authController.me);
 router.patch(
   "/profile",

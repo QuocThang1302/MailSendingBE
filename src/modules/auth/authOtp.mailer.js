@@ -44,6 +44,7 @@ const subjectForPurpose = (purpose) =>
   ({
     email_change: "Confirm your new ChadMailer email",
     password_change: "Your ChadMailer password change OTP",
+    password_reset: "Your ChadMailer password reset OTP",
     register: "Your ChadMailer verification OTP",
   })[purpose] || "Your ChadMailer verification OTP";
 
@@ -51,6 +52,7 @@ const introForPurpose = (purpose) =>
   ({
     email_change: "Use this OTP to confirm this email address for your account.",
     password_change: "Use this OTP to confirm your password change.",
+    password_reset: "Use this OTP to create a new password for your ChadMailer account.",
     register: "Use this OTP to finish creating your ChadMailer account.",
   })[purpose] || "Use this OTP to verify your ChadMailer account.";
 
