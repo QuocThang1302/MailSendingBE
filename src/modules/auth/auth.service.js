@@ -12,6 +12,7 @@ const crypto = require("crypto");
 const OTP_PURPOSE = {
   REGISTER: "register",
   PASSWORD_CHANGE: "password_change",
+  PASSWORD_RESET: "password_reset",
   EMAIL_CHANGE: "email_change",
 };
 
@@ -230,6 +231,49 @@ const verifyPasswordChangeOtp = async (userId, { otp }) => {
   };
 };
 
+const requestPasswordResetOtp = async ({ email }) => {
+  const normalizedEmail = normalizeEmail(email);
+  const user = await authRepository.findUserByEmail(normalizedEmail);
+
+  if (!user) {
+    throw new ApiError(404, "Email is not registered");
+  }
+
+  if (!user.is_active) {
+    throw new ApiError(403, "User is inactive");
+  }
+
+  return createAndSendOtp({
+    email: normalizedEmail,
+    purpose: OTP_PURPOSE.PASSWORD_RESET,
+    payload: {},
+    userId: user.id,
+  });
+};
+
+const verifyPasswordResetOtp = async ({ email, otp, newPassword }) => {
+  const normalizedEmail = normalizeEmail(email);
+  const user = await authRepository.findUserByEmail(normalizedEmail);
+  if (!user || !user.is_active) {
+    throw new ApiError(400, "OTP is invalid or expired");
+  }
+
+  const record = await assertOtp({
+    email: normalizedEmail,
+    purpose: OTP_PURPOSE.PASSWORD_RESET,
+    code: otp,
+    userId: user.id,
+  });
+
+  const passwordHash = await bcrypt.hash(newPassword, env.bcryptSaltRounds);
+  await authRepository.updatePassword(user.id, passwordHash);
+  await authOtpRepository.consumeOtp(record.id);
+
+  return {
+    ok: true,
+  };
+};
+
 const updateProfile = async (userId, { name, email }) => {
   const user = await authRepository.findUserById(userId);
   if (!user) {
@@ -354,6 +398,8 @@ module.exports = {
   getMe,
   requestPasswordChangeOtp,
   verifyPasswordChangeOtp,
+  requestPasswordResetOtp,
+  verifyPasswordResetOtp,
   updateProfile,
   verifyProfileEmailOtp,
 };

@@ -1,10 +1,10 @@
--- Store short-lived OTP codes for registration, password-change, and email-change confirmation.
+-- Store short-lived OTP codes for registration, password-change, password-reset, and email-change confirmation.
 
 CREATE TABLE IF NOT EXISTS auth_otp_codes (
   id BIGSERIAL PRIMARY KEY,
   user_id INT REFERENCES users(id) ON DELETE CASCADE,
   email VARCHAR(150) NOT NULL,
-  purpose VARCHAR(40) NOT NULL CHECK (purpose IN ('register', 'password_change', 'email_change')),
+  purpose VARCHAR(40) NOT NULL CHECK (purpose IN ('register', 'password_change', 'password_reset', 'email_change')),
   code_hash TEXT NOT NULL,
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   expires_at TIMESTAMP NOT NULL,
