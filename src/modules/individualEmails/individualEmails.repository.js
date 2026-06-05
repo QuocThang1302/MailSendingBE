@@ -45,7 +45,9 @@ const findContactsForEmails = async (userId, emails) => {
 
   const { data, error } = await supabase
     .from("email_contacts")
-    .select("id, email, first_name, last_name, phone")
+    .select(
+      "id, email, first_name, last_name, phone, company, city, country, language, source",
+    )
     .eq("user_id", userId)
     .in("email", normalizedEmails);
 
