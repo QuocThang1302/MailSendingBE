@@ -126,15 +126,41 @@ const buildDisplayName = (contact, email) => {
   return normalizeEmail(email).split("@")[0] || "Customer";
 };
 
+const buildMergeContext = (contact, email, additionalContext = {}) => {
+  const firstName = String(contact?.first_name || "").trim();
+  const lastName = String(contact?.last_name || "").trim();
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  return {
+    email,
+    name: buildDisplayName(contact, email),
+    first_name: firstName,
+    firstName,
+    last_name: lastName,
+    lastName,
+    full_name: fullName,
+    fullName,
+    phone: String(contact?.phone || ""),
+    company: String(contact?.company || ""),
+    city: String(contact?.city || ""),
+    country: String(contact?.country || ""),
+    language: String(contact?.language || ""),
+    source: String(contact?.source || ""),
+    amount: "",
+    orderId: "",
+    unsubscribe_url: "",
+    unsubscribeUrl: "",
+    ...additionalContext,
+  };
+};
+
 const applyMergeTags = (template, context) =>
-  String(template || "")
-    .replace(/\{\{\s*name\s*\}\}/gi, context.name)
-    .replace(/\{\{\s*email\s*\}\}/gi, context.email)
-    .replace(/\{\{\s*phone\s*\}\}/gi, context.phone)
-    .replace(/\{\{\s*company\s*\}\}/gi, context.company)
-    .replace(/\{\{\s*amount\s*\}\}/gi, context.amount)
-    .replace(/\{\{\s*orderId\s*\}\}/gi, context.orderId)
-    .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, context.unsubscribeUrl || "");
+  String(template || "").replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key) => {
+    if (Object.prototype.hasOwnProperty.call(context, key)) {
+      return String(context[key] ?? "");
+    }
+    return "";
+  });
 
 const clampQrSize = (value) => {
   const size = Number.parseInt(value, 10);
@@ -333,15 +359,7 @@ const sendBatch = async (userId, payload, mode) => {
 
   for (const email of recipients) {
     const contact = contactsMap.get(email) || null;
-    const context = {
-      name: buildDisplayName(contact, email),
-      email,
-      phone: String(contact?.phone || ""),
-      company: String(contact?.company || ""),
-      amount: "",
-      orderId: "",
-      unsubscribeUrl: "",
-    };
+    const context = buildMergeContext(contact, email);
 
     const renderedSubject = applyMergeTags(payload.subject, context);
     let renderedText = applyMergeTags(payload.content, context);
@@ -363,10 +381,11 @@ const sendBatch = async (userId, payload, mode) => {
         "unsubscribe",
         emailRecord.id,
       );
-      const deliveryContext = {
+      const deliveryContext = buildMergeContext(contact, email, {
         ...context,
+        unsubscribe_url: unsubscribeUrl || "",
         unsubscribeUrl: unsubscribeUrl || "",
-      };
+      });
       renderedText = applyMergeTags(payload.content, deliveryContext);
       const htmlWithTrackedLinks = rewriteTrackedLinks({
         html: resolveQrImages(applyMergeTags(defaultHtml, deliveryContext)),
