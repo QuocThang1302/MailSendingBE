@@ -8,10 +8,7 @@ const listCampaigns = asyncHandler(async (req, res) => {
 });
 
 const getCampaignById = asyncHandler(async (req, res) => {
-  const data = await campaignsService.getCampaignById(
-    req.user,
-    req.params.id,
-  );
+  const data = await campaignsService.getCampaignById(req.user, req.params.id);
   return sendOk(res, data, "Fetched campaign");
 });
 
@@ -76,7 +73,10 @@ const deleteCampaignRecipient = asyncHandler(async (req, res) => {
 });
 
 const deleteCampaign = asyncHandler(async (req, res) => {
-  const data = await campaignsService.deleteCampaign(req.user.id, req.params.id);
+  const data = await campaignsService.deleteCampaign(
+    req.user.id,
+    req.params.id,
+  );
   return sendOk(res, data, "Deleted campaign");
 });
 
@@ -89,7 +89,7 @@ const importRecipients = asyncHandler(async (req, res) => {
 
 const startCampaign = asyncHandler(async (req, res) => {
   const data = await campaignsService.startCampaign(req.user.id, req.params.id);
-  return sendOk(res, data, "Campaign started");
+  return sendOk(res, data, "Campaign enqueued for delivery", 202);
 });
 
 const pauseCampaign = asyncHandler(async (req, res) => {
@@ -98,7 +98,10 @@ const pauseCampaign = asyncHandler(async (req, res) => {
 });
 
 const resumeCampaign = asyncHandler(async (req, res) => {
-  const data = await campaignsService.resumeCampaign(req.user.id, req.params.id);
+  const data = await campaignsService.resumeCampaign(
+    req.user.id,
+    req.params.id,
+  );
   return sendOk(res, data, "Campaign resumed");
 });
 

@@ -9,7 +9,10 @@ const throwIfError = (error) => {
   }
 };
 
-const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizeEmail = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 const INDIVIDUAL_EMAIL_COLUMNS =
   "id, contact_id, email, email_account_id, subject, content_html, content_text, status, sent_time, open_time, click_time, open_count, click_count, error_message, created_at";
 
@@ -38,7 +41,9 @@ const getSendingAccount = async (userId, emailAccountId) => {
 };
 
 const findContactsForEmails = async (userId, emails) => {
-  const normalizedEmails = [...new Set(emails.map(normalizeEmail).filter(Boolean))];
+  const normalizedEmails = [
+    ...new Set(emails.map(normalizeEmail).filter(Boolean)),
+  ];
   if (normalizedEmails.length === 0) {
     return [];
   }

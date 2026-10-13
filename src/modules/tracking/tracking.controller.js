@@ -13,8 +13,13 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+const getRequestMetadata = (req) => ({
+  ipAddress: req.ip || null,
+  userAgent: req.get("user-agent") || null,
+});
+
 const open = asyncHandler(async (req, res) => {
-  await trackingService.recordOpen(req.params.token, req);
+  await trackingService.recordOpen(req.params.token, getRequestMetadata(req));
   res.set({
     "Content-Type": "image/gif",
     "Content-Length": TRANSPARENT_GIF.length,
@@ -26,7 +31,7 @@ const open = asyncHandler(async (req, res) => {
 const click = asyncHandler(async (req, res) => {
   const destination = await trackingService.getClickDestination(
     req.params.token,
-    req,
+    getRequestMetadata(req),
   );
   return res.redirect(302, destination);
 });
@@ -58,7 +63,7 @@ const unsubscribePage = asyncHandler(async (req, res) => {
 });
 
 const unsubscribe = asyncHandler(async (req, res) => {
-  await trackingService.unsubscribe(req.params.token, req);
+  await trackingService.unsubscribe(req.params.token, getRequestMetadata(req));
   return res.type("html").send(`<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Unsubscribed</title></head>

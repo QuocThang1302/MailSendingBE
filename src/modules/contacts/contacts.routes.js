@@ -78,12 +78,11 @@ const createTagSchema = z.object({
     .optional(),
 });
 
-const updateTagSchema = createTagSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  {
+const updateTagSchema = createTagSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field must be provided",
-  },
-);
+  });
 
 const replaceTagsSchema = z.object({
   tagIds: z.array(z.number().int().positive()).max(100),

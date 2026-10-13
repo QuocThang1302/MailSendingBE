@@ -10,7 +10,11 @@ const requireRole =
 
     const normalizedAllowedRoles = allowedRoles
       .flat()
-      .map((role) => String(role || "").trim().toLowerCase())
+      .map((role) =>
+        String(role || "")
+          .trim()
+          .toLowerCase(),
+      )
       .filter(Boolean);
     const currentRole = normalizeRole(req.user.role);
 

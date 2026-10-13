@@ -1,9 +1,6 @@
-const nodemailer = require("nodemailer");
-
 const ApiError = require("../../common/ApiError");
 const env = require("../../config/env");
-
-let transporter = null;
+const mailService = require("../../common/mailService");
 
 const escapeHtml = (value) =>
   String(value || "")
@@ -11,34 +8,6 @@ const escapeHtml = (value) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-
-const isConfigured = () =>
-  Boolean(env.otpEmailFrom && env.otpSmtpHost && env.otpSmtpUsername && env.otpSmtpPassword);
-
-const getTransporter = () => {
-  if (!isConfigured()) {
-    return null;
-  }
-
-  if (!transporter) {
-    const secure = Number(env.otpSmtpPort) === 465;
-    transporter = nodemailer.createTransport({
-      host: env.otpSmtpHost,
-      port: Number(env.otpSmtpPort),
-      secure,
-      requireTLS: env.otpSmtpUseTls === true && !secure,
-      auth: {
-        user: env.otpSmtpUsername,
-        pass: env.otpSmtpPassword,
-      },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 30000,
-    });
-  }
-
-  return transporter;
-};
 
 const subjectForPurpose = (purpose) =>
   ({
@@ -50,9 +19,11 @@ const subjectForPurpose = (purpose) =>
 
 const introForPurpose = (purpose) =>
   ({
-    email_change: "Use this OTP to confirm this email address for your account.",
+    email_change:
+      "Use this OTP to confirm this email address for your account.",
     password_change: "Use this OTP to confirm your password change.",
-    password_reset: "Use this OTP to create a new password for your ChadMailer account.",
+    password_reset:
+      "Use this OTP to create a new password for your ChadMailer account.",
     register: "Use this OTP to finish creating your ChadMailer account.",
   })[purpose] || "Use this OTP to verify your ChadMailer account.";
 
@@ -64,8 +35,7 @@ const mapSmtpError = (error) => {
   if (code === "EAUTH" || responseCode === 535) {
     return new ApiError(502, "OTP email SMTP authentication failed", {
       reason,
-      hint:
-        "For Gmail, OTP_SMTP_PASSWORD must be a Google App Password, not your normal Gmail password.",
+      hint: "For Gmail, OTP_SMTP_PASSWORD must be a Google App Password, not your normal Gmail password.",
     });
   }
 
@@ -75,7 +45,7 @@ const mapSmtpError = (error) => {
 };
 
 const sendOtpEmail = async ({ to, purpose, code, expiresInMinutes }) => {
-  const mailer = getTransporter();
+  const mailer = mailService.getOtpTransporter();
   if (!mailer) {
     if (env.nodeEnv !== "production") {
       console.warn(`[auth-otp] ${purpose} OTP for ${to}: ${code}`);

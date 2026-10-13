@@ -1,4 +1,4 @@
-const nodemailer = require("nodemailer");
+const mailService = require("../../common/mailService");
 const { buildTrackingUrl } = require("../tracking/trackingToken");
 const {
   buildListUnsubscribeHeaders,
@@ -6,13 +6,6 @@ const {
   injectTrackingPixel,
   rewriteTrackedLinks,
 } = require("../tracking/emailDelivery");
-
-const transporterCache = new Map();
-
-const normalizePort = (value) => {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 587;
-};
 
 const htmlToText = (value) => {
   if (!value) {
@@ -90,44 +83,8 @@ const injectPreviewText = (html, previewText) => {
   return `${hiddenPreview}${html}`;
 };
 
-const buildTransporterConfig = (account) => {
-  const port = normalizePort(account.smtp_port);
-  const secure = port === 465;
-  const auth =
-    account.smtp_username || account.smtp_password
-      ? {
-          user: account.smtp_username || "",
-          pass: account.smtp_password || "",
-        }
-      : undefined;
-
-  return {
-    host: account.smtp_host,
-    port,
-    secure,
-    requireTLS: Boolean(account.use_tls) && !secure,
-    auth,
-  };
-};
-
-const getTransporter = (account) => {
-  const cacheKey = JSON.stringify({
-    host: account.smtp_host,
-    port: normalizePort(account.smtp_port),
-    username: account.smtp_username || "",
-    secure: normalizePort(account.smtp_port) === 465,
-    useTls: Boolean(account.use_tls),
-  });
-
-  if (!transporterCache.has(cacheKey)) {
-    transporterCache.set(
-      cacheKey,
-      nodemailer.createTransport(buildTransporterConfig(account)),
-    );
-  }
-
-  return transporterCache.get(cacheKey);
-};
+const getTransporter = (account) => mailService.getTransporter(account);
+const buildFromAddress = (account) => mailService.buildFromAddress(account);
 
 const validateSmtpAccount = (account) => {
   if (!account) {
@@ -147,12 +104,6 @@ const validateSmtpAccount = (account) => {
   }
 };
 
-const buildFromAddress = (account) => {
-  const address = account.email_address;
-  const name = account.display_name ? String(account.display_name).trim() : "";
-  return name ? `"${name.replace(/"/g, '\\"')}" <${address}>` : address;
-};
-
 const renderCampaignEmail = (template, contact, options = {}) => {
   const tokens = options.tokens || {};
   const subject = replacePlaceholders(
@@ -165,7 +116,11 @@ const renderCampaignEmail = (template, contact, options = {}) => {
     contact,
     tokens,
   );
-  const htmlBody = replacePlaceholders(template.content_html || "", contact, tokens);
+  const htmlBody = replacePlaceholders(
+    template.content_html || "",
+    contact,
+    tokens,
+  );
   const textBody = replacePlaceholders(
     template.content_text || htmlToText(htmlBody),
     contact,
@@ -236,13 +191,7 @@ const sendCampaignEmail = async ({
   };
 };
 
-const sendTestEmail = async ({
-  account,
-  toEmail,
-  subject,
-  text,
-  html,
-}) => {
+const sendTestEmail = async ({ account, toEmail, subject, text, html }) => {
   validateSmtpAccount(account);
   const transporter = getTransporter(account);
 

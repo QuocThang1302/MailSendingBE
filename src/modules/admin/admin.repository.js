@@ -78,9 +78,7 @@ const getOverview = async () => {
 const listUsers = async ({ page, pageSize, role, isActive }) => {
   const offset = (page - 1) * pageSize;
 
-  let builder = supabase
-    .from("users")
-    .select(USER_COLUMNS, { count: "exact" });
+  let builder = supabase.from("users").select(USER_COLUMNS, { count: "exact" });
 
   if (role) {
     builder = builder.eq("role", normalizeRole(role));

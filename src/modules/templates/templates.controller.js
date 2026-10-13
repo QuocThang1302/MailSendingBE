@@ -13,10 +13,7 @@ const listSharedTemplates = asyncHandler(async (req, res) => {
 });
 
 const getTemplateById = asyncHandler(async (req, res) => {
-  const data = await templatesService.getTemplateById(
-    req.user,
-    req.params.id,
-  );
+  const data = await templatesService.getTemplateById(req.user, req.params.id);
   return sendOk(res, data, "Fetched template");
 });
 
@@ -88,10 +85,7 @@ const restoreTemplateDesignerVersion = asyncHandler(async (req, res) => {
 });
 
 const deleteTemplate = asyncHandler(async (req, res) => {
-  const data = await templatesService.deleteTemplate(
-    req.user,
-    req.params.id,
-  );
+  const data = await templatesService.deleteTemplate(req.user, req.params.id);
   return sendOk(res, data, "Deleted template");
 });
 

@@ -1,5 +1,5 @@
 const ApiError = require("../../common/ApiError");
-const { ROLES, ROLE_VALUES } = require("../../common/roles");
+const { ROLE_VALUES } = require("../../common/roles");
 const adminRepository = require("./admin.repository");
 const campaignsService = require("../campaigns/campaigns.service");
 const templatesService = require("../templates/templates.service");
@@ -37,7 +37,9 @@ const getUserById = async (userId) => {
 };
 
 const updateUserRole = async (actor, userId, payload) => {
-  const role = String(payload.role || "").trim().toLowerCase();
+  const role = String(payload.role || "")
+    .trim()
+    .toLowerCase();
   if (!ROLE_VALUES.includes(role)) {
     throw new ApiError(400, "Invalid role");
   }

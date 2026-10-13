@@ -22,7 +22,9 @@ const findUserByEmail = async (email) => {
 const findUserById = async (id) => {
   const { data, error } = await supabase
     .from("users")
-    .select("id, name, email, role, is_active, created_at, updated_at, last_login")
+    .select(
+      "id, name, email, role, is_active, created_at, updated_at, last_login",
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -53,7 +55,9 @@ const createUser = async ({ name, email, password, role }) => {
       role,
       is_active: true,
     })
-    .select("id, name, email, role, is_active, created_at, updated_at, last_login")
+    .select(
+      "id, name, email, role, is_active, created_at, updated_at, last_login",
+    )
     .maybeSingle();
 
   throwIfError(error);
@@ -101,7 +105,9 @@ const updateProfile = async (id, { name, email }) => {
     .from("users")
     .update(updates)
     .eq("id", id)
-    .select("id, name, email, role, is_active, created_at, updated_at, last_login")
+    .select(
+      "id, name, email, role, is_active, created_at, updated_at, last_login",
+    )
     .maybeSingle();
 
   throwIfError(error);

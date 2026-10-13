@@ -7,6 +7,7 @@ const env = require("../../config/env");
 const { supabase } = require("../../config/supabase");
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
+const POLLINATIONS_PUBLIC_IMAGE_BASE_URL = "https://image.pollinations.ai";
 const POLLINATIONS_DEFAULT_IMAGE_SIZE = "1536x1024";
 const GENERATED_MEDIA_DIR = path.join(
   __dirname,
@@ -42,6 +43,8 @@ const getAiMediaProvider = () => {
   );
 };
 
+const getPollinationsApiKey = () => String(env.pollinationsApiKey || "").trim();
+
 const openaiRequest = async (pathname, options = {}) => {
   ensureOpenAiConfigured();
 
@@ -57,7 +60,7 @@ const openaiRequest = async (pathname, options = {}) => {
 
   if (!response.ok) {
     let message = `OpenAI API request failed with status ${response.status}`;
-    let details = null;
+    let details;
 
     try {
       details = await response.json();
@@ -66,7 +69,16 @@ const openaiRequest = async (pathname, options = {}) => {
       details = await response.text();
     }
 
-    throw new ApiError(response.status >= 500 ? 502 : response.status, message, details);
+    if (response.status === 402) {
+      message =
+        "OpenAI image generation requires a billed account or available credits. Check OPENAI_API_KEY billing/quota.";
+    }
+
+    throw new ApiError(
+      response.status >= 500 ? 502 : response.status,
+      message,
+      details,
+    );
   }
 
   return response;
@@ -76,21 +88,28 @@ const pollinationsRequest = async (pathname, options = {}) => {
   ensureNativeFetch();
 
   const baseUrl = String(env.pollinationsBaseUrl || "").replace(/\/+$/, "");
+  const url = /^https?:\/\//i.test(pathname)
+    ? new URL(pathname)
+    : new URL(`${baseUrl}${pathname}`);
+  const apiKey = getPollinationsApiKey();
+
+  if (apiKey && !url.searchParams.has("key")) {
+    url.searchParams.set("key", apiKey);
+  }
+
   const headers = {
-    ...(env.pollinationsApiKey
-      ? { Authorization: `Bearer ${env.pollinationsApiKey}` }
-      : {}),
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${baseUrl}${pathname}`, {
+  const response = await fetch(url.toString(), {
     ...options,
     headers,
   });
 
   if (!response.ok) {
     let message = `Pollinations API request failed with status ${response.status}`;
-    let details = null;
+    let details;
 
     try {
       details = await response.json();
@@ -100,7 +119,21 @@ const pollinationsRequest = async (pathname, options = {}) => {
       message = details || message;
     }
 
-    throw new ApiError(response.status >= 500 ? 502 : response.status, message, details);
+    if (response.status === 401) {
+      message =
+        "Pollinations authentication failed. Set POLLINATIONS_API_KEY, or use the public image fallback for image generation.";
+    }
+
+    if (response.status === 402) {
+      message =
+        "Pollinations requires an API key or available Pollen credits for this image request. Check POLLINATIONS_API_KEY or switch provider.";
+    }
+
+    throw new ApiError(
+      response.status >= 500 ? 502 : response.status,
+      message,
+      details,
+    );
   }
 
   return response;
@@ -286,7 +319,12 @@ const getImageExtension = (contentType) => {
   return "jpg";
 };
 
-const buildPollinationsQuery = ({ model, size, seconds }) => {
+const buildPollinationsQuery = ({
+  model,
+  size,
+  seconds,
+  includeNoLogo = true,
+}) => {
   const params = new URLSearchParams();
 
   if (model) {
@@ -303,7 +341,10 @@ const buildPollinationsQuery = ({ model, size, seconds }) => {
     params.set("duration", String(seconds));
   }
 
-  params.set("nologo", "true");
+  if (includeNoLogo) {
+    params.set("nologo", "true");
+  }
+
   return params.toString();
 };
 
@@ -350,17 +391,46 @@ const generateImageOpenAi = async (payload) => {
 };
 
 const generateImagePollinations = async (payload) => {
-  const model = payload.model || env.pollinationsImageModel;
+  const apiKey = getPollinationsApiKey();
+  const model = apiKey ? payload.model || env.pollinationsImageModel : "";
   const query = buildPollinationsQuery({
     model,
     size: payload.size || POLLINATIONS_DEFAULT_IMAGE_SIZE,
+    includeNoLogo: Boolean(apiKey),
   });
   const prompt = encodeURIComponent(payload.prompt);
-  const response = await pollinationsRequest(`/image/${prompt}?${query}`, {
-    headers: {
-      Accept: "image/*",
-    },
-  });
+  const querySuffix = query ? `?${query}` : "";
+  const imagePath = apiKey
+    ? `/image/${prompt}?${query}`
+    : `${POLLINATIONS_PUBLIC_IMAGE_BASE_URL}/prompt/${prompt}${querySuffix}`;
+  let response;
+
+  try {
+    response = await pollinationsRequest(imagePath, {
+      headers: {
+        Accept: "image/*",
+      },
+    });
+  } catch (error) {
+    if (!apiKey && [401, 402].includes(error.statusCode)) {
+      response = await pollinationsRequest(
+        `${POLLINATIONS_PUBLIC_IMAGE_BASE_URL}/prompt/${prompt}`,
+        {
+          headers: {
+            Accept: "image/*",
+          },
+        },
+      );
+    } else {
+      throw error;
+    }
+  }
+
+  if (
+    !response.headers.get("content-type")?.toLowerCase().startsWith("image/")
+  ) {
+    throw new ApiError(502, "Pollinations did not return image data");
+  }
 
   const arrayBuffer = await response.arrayBuffer();
   const saved = await saveGeneratedFile({
@@ -371,7 +441,7 @@ const generateImagePollinations = async (payload) => {
   return {
     type: "image",
     provider: "pollinations",
-    model,
+    model: model || "public",
     prompt: payload.prompt,
     url: saved.url,
     filename: saved.filename,
@@ -386,7 +456,10 @@ const generateImagePollinations = async (payload) => {
 
 const createVideoJobOpenAi = async (payload) => {
   if (typeof FormData !== "function") {
-    throw new ApiError(500, "This server needs Node.js 18+ for native FormData");
+    throw new ApiError(
+      500,
+      "This server needs Node.js 18+ for native FormData",
+    );
   }
 
   const formData = new FormData();
@@ -457,7 +530,9 @@ const createVideoJobPollinations = async (payload) => {
 };
 
 const getVideoStatusOpenAi = async (videoId) => {
-  const response = await openaiRequest(`/videos/${encodeURIComponent(videoId)}`);
+  const response = await openaiRequest(
+    `/videos/${encodeURIComponent(videoId)}`,
+  );
   return response.json();
 };
 

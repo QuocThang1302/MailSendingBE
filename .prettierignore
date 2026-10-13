@@ -1,0 +1,10 @@
+node_modules
+public/media
+package-lock.json
+*.sql
+.env
+.env.*
+.git
+.husky
+postman
+.postman

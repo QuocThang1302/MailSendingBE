@@ -1,5 +1,4 @@
 const { supabase } = require("../../config/supabase");
-const { renderCampaignEmail, sendCampaignEmail } = require("./smtpMailer");
 
 const CAMPAIGN_COLUMNS =
   "id, user_id, campaign_name, template_id, email_account_id, segment_id, status, campaign_type, scheduled_time, started_at, completed_at, total_recipients, sent_count, open_count, click_count, bounce_count, unsubscribe_count, created_at, updated_at";
@@ -16,7 +15,10 @@ const throwIfError = (error) => {
 };
 
 const unique = (values) => [...new Set(values.filter(Boolean))];
-const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizeEmail = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 
 const parseTimestamp = (value) => {
   if (!value) {
@@ -557,11 +559,14 @@ const updateCampaign = async (userId, campaignId, payload) => {
   }
 
   const nextTemplateId = payload.templateId || existing.template_id;
-  const nextEmailAccountId = payload.emailAccountId || existing.email_account_id;
-  const nextSegmentId =
-    Object.prototype.hasOwnProperty.call(payload, "segmentId")
-      ? payload.segmentId || null
-      : existing.segment_id;
+  const nextEmailAccountId =
+    payload.emailAccountId || existing.email_account_id;
+  const nextSegmentId = Object.prototype.hasOwnProperty.call(
+    payload,
+    "segmentId",
+  )
+    ? payload.segmentId || null
+    : existing.segment_id;
 
   await ensureTemplateExists(nextTemplateId);
   await ensureEmailAccountExists(userId, nextEmailAccountId);
@@ -833,30 +838,123 @@ const deleteCampaignRecipient = async (userId, campaignId, recipientId) => {
   return true;
 };
 
-const validateCampaignDispatch = (campaign, template, emailAccount) => {
-  if (!template) {
-    throw new Error("TEMPLATE_NOT_FOUND");
+const findCampaignForDispatch = async (userId, campaignId) => {
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .select(
+      "id, user_id, campaign_name, status, started_at, total_recipients, sent_count, template_id, email_account_id",
+    )
+    .eq("id", campaignId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfError(campaignError);
+  if (!campaign) {
+    return null;
   }
 
-  if (!template.is_active) {
-    throw new Error("TEMPLATE_INACTIVE");
+  const [
+    { data: template, error: templateError },
+    { data: emailAccount, error: emailAccountError },
+  ] = await Promise.all([
+    supabase
+      .from("email_templates")
+      .select(TEMPLATE_SEND_COLUMNS)
+      .eq("id", campaign.template_id)
+      .maybeSingle(),
+    supabase
+      .from("email_accounts")
+      .select(EMAIL_ACCOUNT_SEND_COLUMNS)
+      .eq("id", campaign.email_account_id)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  throwIfError(templateError);
+  throwIfError(emailAccountError);
+
+  return {
+    campaign,
+    template: template || null,
+    emailAccount: emailAccount || null,
+  };
+};
+
+const markCampaignQueued = async (userId, campaignId) => {
+  const { data, error } = await supabase
+    .from("campaigns")
+    .update({
+      status: "queued",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId)
+    .eq("user_id", userId)
+    .select("id, campaign_name, status, updated_at")
+    .maybeSingle();
+
+  throwIfError(error);
+  return data || null;
+};
+
+const claimCampaignForSending = async (userId, campaignId, previousStatus) => {
+  const now = new Date().toISOString();
+  let builder = supabase
+    .from("campaigns")
+    .update({
+      status: "sending",
+      started_at: now,
+      updated_at: now,
+    })
+    .eq("id", campaignId)
+    .eq("user_id", userId);
+
+  if (previousStatus) {
+    builder = builder.eq("status", previousStatus);
   }
 
-  if (!emailAccount) {
-    throw new Error("EMAIL_ACCOUNT_NOT_FOUND");
-  }
+  const { data, error } = await builder
+    .select("id, status, started_at, sent_count")
+    .maybeSingle();
 
-  if (emailAccount.status && emailAccount.status !== "active") {
-    throw new Error("EMAIL_ACCOUNT_INACTIVE");
-  }
+  throwIfError(error);
+  return data || null;
+};
 
-  if (!emailAccount.smtp_host) {
-    throw new Error("SMTP_HOST_REQUIRED");
-  }
+const listPendingCampaignRecipientsWithContacts = async (
+  campaignId,
+  userId,
+) => {
+  const { data: pendingRows, error: pendingRowsError } = await supabase
+    .from("campaign_recipients")
+    .select("id, contact_id, email")
+    .eq("campaign_id", campaignId)
+    .eq("status", "pending");
+  throwIfError(pendingRowsError);
 
-  if (!emailAccount.email_address) {
-    throw new Error("SMTP_FROM_ADDRESS_REQUIRED");
-  }
+  const pendingRowsSafe = pendingRows || [];
+  const contactIds = unique(pendingRowsSafe.map((row) => row.contact_id));
+
+  const { data: contacts, error: contactsError } =
+    contactIds.length > 0
+      ? await supabase
+          .from("email_contacts")
+          .select(
+            "id, email, first_name, last_name, phone, company, city, country, language, source",
+          )
+          .eq("user_id", userId)
+          .in("id", contactIds)
+      : { data: [], error: null };
+  throwIfError(contactsError);
+
+  const contactMap = new Map((contacts || []).map((row) => [row.id, row]));
+
+  return pendingRowsSafe.map((row) => ({
+    recipient: row,
+    contact: contactMap.get(row.contact_id) || {
+      id: row.contact_id,
+      email: row.email,
+    },
+  }));
 };
 
 const updateCampaignRecipientResult = async ({
@@ -898,268 +996,79 @@ const isCampaignPaused = async (userId, campaignId) => {
   return data?.status === "paused";
 };
 
-const startCampaign = async (userId, campaignId) => {
-  const { data: campaign, error: campaignError } = await supabase
-    .from("campaigns")
-    .select(
-      "id, status, started_at, total_recipients, sent_count, template_id, email_account_id",
-    )
-    .eq("id", campaignId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  throwIfError(campaignError);
-
-  if (!campaign) {
-    return null;
+const insertEmailLogs = async (logs) => {
+  if (!Array.isArray(logs) || logs.length === 0) {
+    return;
   }
+  const { error } = await supabase.from("email_logs").insert(logs);
+  throwIfError(error);
+};
 
-  if (
-    !["draft", "scheduled", "paused", "queued", "failed"].includes(
-      campaign.status,
-    )
-  ) {
-    throw new Error("INVALID_CAMPAIGN_STATUS");
-  }
-
+const incrementAccountSentCount = async (accountId, userId, count) => {
+  if (!count || count <= 0) return;
   const now = new Date().toISOString();
-
-  const [
-    { data: template, error: templateError },
-    { data: emailAccount, error: emailAccountError },
-  ] = await Promise.all([
-    supabase
-      .from("email_templates")
-      .select(TEMPLATE_SEND_COLUMNS)
-      .eq("id", campaign.template_id)
-      .maybeSingle(),
-    supabase
-      .from("email_accounts")
-      .select(EMAIL_ACCOUNT_SEND_COLUMNS)
-      .eq("id", campaign.email_account_id)
-      .eq("user_id", userId)
-      .maybeSingle(),
-  ]);
-
-  throwIfError(templateError);
-  throwIfError(emailAccountError);
-  validateCampaignDispatch(campaign, template, emailAccount);
-
-  const { data: claimedCampaign, error: markSendingError } = await supabase
-    .from("campaigns")
-    .update({
-      status: "sending",
-      started_at: campaign.started_at || now,
-      updated_at: now,
-    })
-    .eq("id", campaignId)
+  const { data: current } = await supabase
+    .from("email_accounts")
+    .select("sent_today")
+    .eq("id", accountId)
     .eq("user_id", userId)
-    .eq("status", campaign.status)
-    .select("id")
     .maybeSingle();
-  throwIfError(markSendingError);
 
-  if (!claimedCampaign) {
-    throw new Error("INVALID_CAMPAIGN_STATUS");
-  }
+  const { error } = await supabase
+    .from("email_accounts")
+    .update({
+      sent_today: (current?.sent_today || 0) + count,
+      last_used_at: now,
+      status: "active",
+    })
+    .eq("id", accountId)
+    .eq("user_id", userId);
+  throwIfError(error);
+};
 
-  const { data: pendingRows, error: pendingRowsError } = await supabase
+const getCampaignRecipientFailureCount = async (campaignId) => {
+  const { count, error } = await supabase
     .from("campaign_recipients")
-    .select("id, contact_id, email")
+    .select("id", { count: "exact", head: true })
     .eq("campaign_id", campaignId)
-    .eq("status", "pending");
-  throwIfError(pendingRowsError);
+    .in("status", ["failed", "bounced"]);
+  throwIfError(error);
+  return count || 0;
+};
 
-  const pendingRowsSafe = pendingRows || [];
-  const contactIds = unique(pendingRowsSafe.map((row) => row.contact_id));
-
-  const { data: contacts, error: contactsError } =
-    contactIds.length > 0
-      ? await supabase
-          .from("email_contacts")
-          .select(
-            "id, email, first_name, last_name, phone, company, city, country, language, source",
-          )
-          .eq("user_id", userId)
-          .in("id", contactIds)
-      : { data: [], error: null };
-  throwIfError(contactsError);
-
-  const contactMap = new Map((contacts || []).map((row) => [row.id, row]));
-
-  let remainingDailyLimit = Math.max(
-    0,
-    (emailAccount.daily_limit || 0) - (emailAccount.sent_today || 0),
-  );
-  let successCount = 0;
-  let failedCount = 0;
-  let paused = false;
-  const logs = [];
-
-  for (const row of pendingRowsSafe) {
-    if (await isCampaignPaused(userId, campaignId)) {
-      paused = true;
-      break;
-    }
-
-    const contact = contactMap.get(row.contact_id) || {
-      id: row.contact_id,
-      email: row.email,
-    };
-    const rendered = renderCampaignEmail(template, contact);
-
-    if (remainingDailyLimit <= 0) {
-      await updateCampaignRecipientResult({
-        recipientId: row.id,
-        status: "failed",
-        renderedSubject: rendered.subject,
-        renderedHtml: rendered.html,
-        errorMessage: "Daily sending limit reached for this email account",
-      });
-
-      logs.push({
-        user_id: userId,
-        campaign_id: campaignId,
-        contact_id: row.contact_id,
-        email: row.email,
-        status: "failed",
-        message: "Daily sending limit reached for this email account",
-        sent_time: new Date().toISOString(),
-      });
-      failedCount += 1;
-      continue;
-    }
-
-    try {
-      const sentAt = new Date().toISOString();
-      const result = await sendCampaignEmail({
-        account: emailAccount,
-        template,
-        contact,
-        recipientId: row.id,
-        recipientEmail: row.email,
-      });
-
-      await updateCampaignRecipientResult({
-        recipientId: row.id,
-        status: "sent",
-        renderedSubject: result.rendered.subject,
-        renderedHtml: result.rendered.html,
-        errorMessage: null,
-        sentTime: sentAt,
-      });
-
-      logs.push({
-        user_id: userId,
-        campaign_id: campaignId,
-        contact_id: row.contact_id,
-        email: row.email,
-        status: "sent",
-        message: result.response || result.messageId || "Campaign sent",
-        sent_time: sentAt,
-      });
-
-      successCount += 1;
-      remainingDailyLimit -= 1;
-    } catch (error) {
-      const message = error.message || "SMTP send failed";
-
-      await updateCampaignRecipientResult({
-        recipientId: row.id,
-        status: "failed",
-        renderedSubject: rendered.subject,
-        renderedHtml: rendered.html,
-        errorMessage: message,
-      });
-
-      logs.push({
-        user_id: userId,
-        campaign_id: campaignId,
-        contact_id: row.contact_id,
-        email: row.email,
-        status: "failed",
-        message,
-        sent_time: new Date().toISOString(),
-      });
-
-      failedCount += 1;
-    }
-  }
-
-  paused = paused || (await isCampaignPaused(userId, campaignId));
-
-  if (logs.length > 0) {
-    const { error: logError } = await supabase.from("email_logs").insert(logs);
-    throwIfError(logError);
-  }
-
-  if (successCount > 0) {
-    const { error: accountUpdateError } = await supabase
-      .from("email_accounts")
-      .update({
-        sent_today: (emailAccount.sent_today || 0) + successCount,
-        last_used_at: now,
-        status: "active",
-      })
-      .eq("id", emailAccount.id)
-      .eq("user_id", userId);
-    throwIfError(accountUpdateError);
-  }
-
-  const { count: remainingFailureCount, error: remainingFailureError } =
-    await supabase
-      .from("campaign_recipients")
-      .select("id", { count: "exact", head: true })
-      .eq("campaign_id", campaignId)
-      .in("status", ["failed", "bounced"]);
-  throwIfError(remainingFailureError);
-
-  const completeDispatch = async (preservePause) => {
-    const nextStatus = preservePause
-      ? "paused"
-      : (remainingFailureCount || 0) > 0
-        ? "failed"
-        : "sent";
-    const updates = {
-      status: nextStatus,
-      sent_count: (campaign.sent_count || 0) + successCount,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (!preservePause) {
-      updates.completed_at = new Date().toISOString();
-    }
-
-    const { data, error } = await supabase
-      .from("campaigns")
-      .update(updates)
-      .eq("id", campaignId)
-      .eq("user_id", userId)
-      .eq("status", preservePause ? "paused" : "sending")
-      .select(
-        "id, campaign_name, status, campaign_type, total_recipients, sent_count, open_count, click_count, bounce_count, unsubscribe_count, started_at, completed_at, updated_at",
-      )
-      .maybeSingle();
-
-    throwIfError(error);
-    return data || null;
+const completeCampaignDispatch = async (
+  userId,
+  campaignId,
+  { nextStatus, sentCount, completedAt, previousStatus },
+) => {
+  const updates = {
+    status: nextStatus,
+    sent_count: sentCount,
+    updated_at: new Date().toISOString(),
   };
 
-  let updatedCampaign = await completeDispatch(paused);
-  if (!updatedCampaign && !paused) {
-    paused = true;
-    updatedCampaign = await completeDispatch(true);
+  if (completedAt) {
+    updates.completed_at = completedAt;
   }
 
-  if (!updatedCampaign) {
-    throw new Error("INVALID_CAMPAIGN_STATUS");
+  let builder = supabase
+    .from("campaigns")
+    .update(updates)
+    .eq("id", campaignId)
+    .eq("user_id", userId);
+
+  if (previousStatus) {
+    builder = builder.eq("status", previousStatus);
   }
 
-  return {
-    ...updatedCampaign,
-    sent_now: successCount,
-    failed_now: failedCount,
-  };
+  const { data, error } = await builder
+    .select(
+      "id, campaign_name, status, campaign_type, total_recipients, sent_count, open_count, click_count, bounce_count, unsubscribe_count, started_at, completed_at, updated_at",
+    )
+    .maybeSingle();
+
+  throwIfError(error);
+  return data || null;
 };
 
 const pauseCampaign = async (userId, campaignId) => {
@@ -1306,8 +1215,7 @@ const resumeCampaignByScope = async ({ userId, campaignId }) => {
 const resumeCampaign = (userId, campaignId) =>
   resumeCampaignByScope({ userId, campaignId });
 
-const resumeAnyCampaign = (campaignId) =>
-  resumeCampaignByScope({ campaignId });
+const resumeAnyCampaign = (campaignId) => resumeCampaignByScope({ campaignId });
 
 const deleteCampaignByAdmin = async (campaignId) => {
   await clearCampaignDeleteBlockers(campaignId);
@@ -1673,7 +1581,16 @@ module.exports = {
   updateCampaignRecipient,
   deleteCampaignRecipient,
   deleteCampaign,
-  startCampaign,
+  findCampaignForDispatch,
+  markCampaignQueued,
+  claimCampaignForSending,
+  listPendingCampaignRecipientsWithContacts,
+  updateCampaignRecipientResult,
+  isCampaignPaused,
+  insertEmailLogs,
+  incrementAccountSentCount,
+  getCampaignRecipientFailureCount,
+  completeCampaignDispatch,
   pauseCampaign,
   resumeCampaign,
   pauseAnyCampaign,

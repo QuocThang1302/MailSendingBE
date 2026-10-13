@@ -14,7 +14,9 @@ const invalidateOtps = async ({ email, purpose, userId = null }) => {
     .eq("purpose", purpose)
     .is("consumed_at", null);
 
-  builder = userId ? builder.eq("user_id", userId) : builder.is("user_id", null);
+  builder = userId
+    ? builder.eq("user_id", userId)
+    : builder.is("user_id", null);
 
   const { error } = await builder;
   throwIfError(error);
@@ -68,7 +70,9 @@ const findActiveOtp = async ({ email, purpose, userId = null }) => {
     .is("consumed_at", null)
     .gt("expires_at", now);
 
-  builder = userId ? builder.eq("user_id", userId) : builder.is("user_id", null);
+  builder = userId
+    ? builder.eq("user_id", userId)
+    : builder.is("user_id", null);
 
   const { data, error } = await builder
     .order("created_at", { ascending: false })

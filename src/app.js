@@ -18,7 +18,10 @@ app.use(
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(morgan("dev"));
-app.use("/media", express.static(path.join(__dirname, "..", "public", "media")));
+app.use(
+  "/media",
+  express.static(path.join(__dirname, "..", "public", "media")),
+);
 
 app.use("/api/v1", apiRoutes);
 

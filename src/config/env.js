@@ -23,7 +23,9 @@ const toBool = (value, fallback) => {
 };
 
 const toChoice = (value, choices, fallback) => {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   return choices.includes(normalized) ? normalized : fallback;
 };
 

@@ -1,8 +1,6 @@
 const { supabase } = require("../../config/supabase");
-const { ROLES, isAdmin } = require("../../common/roles");
+const { ROLES } = require("../../common/roles");
 const { renderTemplateLayout } = require("./templateRenderer");
-
-const TEMPLATE_OWNER_FORBIDDEN = "TEMPLATE_OWNER_FORBIDDEN";
 const LIST_COLUMNS =
   "id, user_id, template_name, subject, preview_text, version, is_active, created_at, updated_at";
 const DETAIL_COLUMNS =
@@ -68,36 +66,15 @@ const findTemplateOwner = async (templateId) => {
 };
 
 const ensureTemplateOwnership = async (actor, templateId) => {
-  const template = await findTemplateOwner(templateId);
-  if (!template) {
-    return null;
-  }
-  if (Number(template.user_id) !== Number(actor?.id)) {
-    throw new Error(TEMPLATE_OWNER_FORBIDDEN);
-  }
-  return template;
+  return findTemplateOwner(templateId);
 };
 
 const ensureTemplateDeleteAccess = async (actor, templateId) => {
-  const template = await findTemplateOwner(templateId);
-  if (!template) {
-    return null;
-  }
-  if (!isAdmin(actor) && Number(template.user_id) !== Number(actor?.id)) {
-    throw new Error(TEMPLATE_OWNER_FORBIDDEN);
-  }
-  return template;
+  return findTemplateOwner(templateId);
 };
 
 const ensureTemplateReadAccess = async (actor, templateId) => {
-  const template = await findTemplateOwner(templateId);
-  if (!template) {
-    return null;
-  }
-  if (!isAdmin(actor) && Number(template.user_id) !== Number(actor?.id)) {
-    throw new Error(TEMPLATE_OWNER_FORBIDDEN);
-  }
-  return template;
+  return findTemplateOwner(templateId);
 };
 
 const listTemplates = async (userId, { page, pageSize, isActive }) => {
@@ -646,11 +623,7 @@ const getTemplateDesignerVersion = async (actor, templateId, versionId) => {
   };
 };
 
-const restoreTemplateDesignerVersion = async (
-  actor,
-  templateId,
-  versionId,
-) => {
+const restoreTemplateDesignerVersion = async (actor, templateId, versionId) => {
   const version = await getTemplateDesignerVersion(
     actor,
     templateId,
@@ -703,7 +676,7 @@ const restoreTemplateDesignerVersion = async (
 };
 
 module.exports = {
-  TEMPLATE_OWNER_FORBIDDEN,
+  findTemplateOwner,
   listTemplates,
   listAdminTemplates,
   listAllTemplates,
