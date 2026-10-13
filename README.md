@@ -1,305 +1,477 @@
-# Email Marketing Backend
+# MailSendingBE — Personalized Email Marketing Platform Backend
 
-Node.js + Express backend for the email marketing schema in `email_marketing_complete.sql`.
+A robust, modular, and scalable Node.js + Express 5 backend for end-to-end personalized email marketing campaigns, transactional email delivery, visual drag-and-drop template compilation, contact list segmentation, real-time engagement tracking (opens, clicks, unsubscribes), and AI-powered media generation.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture & Project Structure](#architecture--project-structure)
+- [Prerequisites](#prerequisites)
+- [Local Installation & Setup](#local-installation--setup)
+  - [1. Clone the Repository](#1-clone-the-repository)
+  - [2. Install Dependencies](#2-install-dependencies)
+  - [3. Configure Environment Variables](#3-configure-environment-variables)
+  - [4. Database Setup & Sequential Migrations](#4-database-setup--sequential-migrations)
+  - [5. Initial Administrator Account Setup](#5-initial-administrator-account-setup)
+  - [6. Start the Server](#6-start-the-server)
+- [Available NPM Scripts](#available-npm-scripts)
+- [Campaign Dispatch & Background Scheduler](#campaign-dispatch--background-scheduler)
+- [Email Tracking & Deliverability](#email-tracking--deliverability)
+- [Visual Template Designer](#visual-template-designer)
+- [AI Media Generation](#ai-media-generation)
+- [API Endpoints Reference](#api-endpoints-reference)
+- [Code Quality & Git Hooks](#code-quality--git-hooks)
+- [License](#license)
+
+---
+
+## Features
+
+- **Asynchronous Campaign Delivery**: Trigger bulk campaigns with immediate `202 Accepted` response. Background scheduler processes queue batches safely with transactional locks, rate-limiting, and error logging.
+- **Layered Architecture**: Clear separation of concerns following Controller-Service-Repository-DTO patterns.
+- **Multi-Account SMTP Delivery**: Manage multiple SMTP sender accounts per user or organization with daily rate quotas, TLS options, and live connection testing.
+- **Visual Drag-and-Drop Template Designer**: JSON-based layout tree compiled automatically into email-client-friendly nested tables with mobile-responsive stacked styling.
+- **Contact Segmentation & Custom Attributes**: Manage contacts with tags and custom dynamic fields. Bulk import and export via CSV and Excel (`.xlsx`).
+- **Individual & Transactional Email Delivery**: Direct single-recipient email delivery with personalized variable interpolation, HTML snapshot retention, and live tracking.
+- **Privacy-Conscious Engagement Tracking**:
+  - 1x1 transparent tracking pixel for open rate tracking.
+  - Signed tracking tokens for click-through redirection.
+  - One-click unsubscribe links with preference management.
+- **AI Media Generation**: Generate email marketing images and videos directly via Pollinations or OpenAI, hosted on Supabase Storage or local static media serving.
+- **Enterprise Security & RBAC**:
+  - Role-based authorization (`user` vs `admin`).
+  - 2-factor OTP verification for user registration and password updates.
+  - Passwords hashed with `bcryptjs`.
+  - HTTP protection with `helmet`, CORS, and Zod input validation.
+
+---
 
 ## Tech Stack
 
-- Node.js
-- Express
-- Supabase (`@supabase/supabase-js`)
-- Nodemailer (SMTP delivery)
-- JWT auth (`jsonwebtoken`)
-- Validation (`zod`)
+| Component           | Technology                                                       |
+| ------------------- | ---------------------------------------------------------------- |
+| **Runtime**         | Node.js (v18+, v20+ or v24+ recommended)                         |
+| **Web Framework**   | Express 5.x                                                      |
+| **Database**        | PostgreSQL 14+ (hosted on Supabase)                              |
+| **Database Client** | `@supabase/supabase-js`                                          |
+| **Email Transport** | Nodemailer (SMTP connection pooling & verification)              |
+| **Validation**      | Zod                                                              |
+| **Security**        | JSON Web Tokens (`jsonwebtoken`), `bcryptjs`, `helmet`, `cors`   |
+| **File Processing** | `multer` (multipart uploads), `xlsx` (Excel & CSV import/export) |
+| **Code Quality**    | ESLint (flat config), Prettier, Husky, lint-staged, Nodemon      |
 
-## Project Structure
+---
+
+## Architecture & Project Structure
+
+The project follows a modular, layered architecture inspired by pragmatic NestJS patterns while keeping the simplicity and speed of Express:
 
 ```text
-src/
-  config/
-  common/
-  middlewares/
-  modules/
-    auth/
-    contacts/
-    templates/
-    emailAccounts/
-    campaigns/
-    dashboard/
-  routes/
-  app.js
-  server.js
+MailSendingBE/
+├── .husky/                  # Git pre-commit hooks (Husky + lint-staged)
+├── public/
+│   └── media/               # Locally stored/generated AI media assets
+├── src/
+│   ├── config/              # Centralized environment variables & Supabase client
+│   ├── common/              # Shared utilities (mailService, roles, constants)
+│   ├── middlewares/         # JWT authentication, role authorization, error handling
+│   ├── modules/
+│   │   ├── admin/           # Administrative overview, user/role management
+│   │   ├── aiMedia/         # AI image/video generation (Pollinations / OpenAI)
+│   │   ├── auth/            # Registration, login, OTP validation, passwords
+│   │   ├── campaigns/       # Campaign management, DTOs, async queue scheduler
+│   │   ├── contacts/        # Contacts, tags, custom fields, CSV/Excel import/export
+│   │   ├── dashboard/       # Analytics and delivery metrics
+│   │   ├── emailAccounts/   # SMTP credentials and connection testing
+│   │   ├── individualEmails/# Single personalized emails and previews
+│   │   ├── templates/       # Email templates, visual designer & HTML compiler
+│   │   └── tracking/        # Open tracking pixel, link redirect, unsubscribes
+│   ├── routes/              # Central API v1 router index
+│   ├── scripts/             # CLI utilities (hashPassword.js) and SQL migrations
+│   │   └── sql/             # Incremental database migrations
+│   ├── app.js               # Express application initialization & middleware
+│   └── server.js            # HTTP server entry point & scheduler boot
+├── email_marketing_complete.sql # Complete base PostgreSQL database schema
+├── eslint.config.js         # ESLint configuration (Flat config format)
+├── .prettierrc              # Prettier code formatting rules
+├── .env.example             # Template for environment variables
+└── package.json             # NPM scripts and dependencies
 ```
 
-## Setup
+---
 
-1. Install dependencies:
+## Prerequisites
+
+Before running the project locally, ensure you have:
+
+1. **Node.js**: `v18.0.0` or higher (`v20+` or `v24+` recommended). Check with `node -v`.
+2. **NPM**: `v9.0.0` or higher. Check with `npm -v`.
+3. **PostgreSQL Database**: A running PostgreSQL instance or a free [Supabase](https://supabase.com) project.
+4. **SMTP Sending Account**: A valid SMTP account (e.g. Gmail App Password, SendGrid, Amazon SES, or Mailgun) for sending real emails and OTP verification codes.
+
+---
+
+## Local Installation & Setup
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd MailSendingBE
+```
+
+### 2. Install Dependencies
+
+Install all project dependencies and initialize Husky git hooks:
 
 ```bash
 npm install
 ```
 
-2. Copy env file and configure Supabase connection:
+### 3. Configure Environment Variables
+
+Create your local `.env` file from the example template:
 
 ```bash
+# On Windows (cmd / PowerShell):
 copy .env.example .env
+
+# On Linux / macOS:
+cp .env.example .env
 ```
 
-3. Import schema from `email_marketing_complete.sql` into your Supabase Postgres database (SQL Editor).
+Open `.env` in your editor and configure the parameters according to your local environment:
 
-4. Run designer migration for drag-drop template support:
+#### Core Server & Database
+
+| Variable          | Description                                            | Default / Example                      |
+| ----------------- | ------------------------------------------------------ | -------------------------------------- |
+| `PORT`            | Local HTTP server port                                 | `5000`                                 |
+| `NODE_ENV`        | Application environment (`development` / `production`) | `development`                          |
+| `SUPABASE_URL`    | Supabase project URL                                   | `https://your-project-ref.supabase.co` |
+| `SUPABASE_KEY`    | Supabase API key (service-role or anon key)            | `your_supabase_key`                    |
+| `PUBLIC_BASE_URL` | Public URL for email tracking and media assets         | `http://localhost:5000`                |
+
+#### Authentication & Security
+
+| Variable              | Description                                        | Default / Example         |
+| --------------------- | -------------------------------------------------- | ------------------------- |
+| `JWT_SECRET`          | Secret key for signing JSON Web Tokens             | `change_me_in_production` |
+| `JWT_EXPIRES_IN`      | JWT token validity window                          | `7d`                      |
+| `BCRYPT_SALT_ROUNDS`  | Password hashing salt rounds                       | `10`                      |
+| `OTP_SECRET`          | Secret key for hashing OTP codes                   | `change_me_for_otp`       |
+| `OTP_EXPIRES_MINUTES` | Expiration time for OTP codes in minutes           | `3`                       |
+| `OTP_MAX_ATTEMPTS`    | Maximum failed verification attempts before expiry | `5`                       |
+
+#### OTP SMTP Email Delivery
+
+| Variable            | Description                                    | Default / Example                    |
+| ------------------- | ---------------------------------------------- | ------------------------------------ |
+| `OTP_EMAIL_FROM`    | Sender email address for OTP emails            | `"ChadMailer <support@example.com>"` |
+| `OTP_SMTP_HOST`     | SMTP server host for sending OTP emails        | `smtp.gmail.com`                     |
+| `OTP_SMTP_PORT`     | SMTP port (`587` for STARTTLS, `465` for SSL)  | `587`                                |
+| `OTP_SMTP_USERNAME` | SMTP account username                          | `user@example.com`                   |
+| `OTP_SMTP_PASSWORD` | SMTP account password or app-specific password | `your_smtp_app_password`             |
+| `OTP_SMTP_USE_TLS`  | Enable TLS/STARTTLS connection                 | `true`                               |
+
+> **Note**: In development mode (`NODE_ENV=development`), if OTP SMTP credentials are not configured, generated OTP codes will be printed directly to the server terminal console for testing.
+
+#### Email Tracking & Deliverability
+
+| Variable                          | Description                                 | Default / Example                  |
+| --------------------------------- | ------------------------------------------- | ---------------------------------- |
+| `TRACKING_SECRET`                 | Secret key for signing HMAC tracking tokens | `change_me_for_tracking`           |
+| `EMAIL_OPEN_TRACKING_ENABLED`     | Enable 1x1 transparent open tracking pixel  | `false`                            |
+| `EMAIL_CLICK_TRACKING_MODE`       | Link rewrite mode (`none`, `marked`, `all`) | `marked`                           |
+| `EMAIL_TRACKING_REQUIRE_HTTPS`    | Enforce HTTPS for tracking links in emails  | `true` (set `false` for localhost) |
+| `EMAIL_APPEND_UNSUBSCRIBE_FOOTER` | Append unsubscribe footer if missing        | `true`                             |
+
+#### Background Campaign Scheduler
+
+| Variable                     | Description                                  | Default / Example    |
+| ---------------------------- | -------------------------------------------- | -------------------- |
+| `SCHEDULER_ENABLED`          | Enable automatic background queue processing | `true`               |
+| `SCHEDULER_INTERVAL_MS`      | Poll interval for scheduler worker loop      | `15000` (15 seconds) |
+| `SCHEDULER_BATCH_SIZE`       | Recipient batch size per dispatch tick       | `50`                 |
+| `SCHEDULER_LOCK_TTL_SECONDS` | Expiration timeout for active campaign locks | `25`                 |
+
+#### AI Media Generation (Optional)
+
+| Variable                  | Description                                       | Default / Example |
+| ------------------------- | ------------------------------------------------- | ----------------- |
+| `AI_MEDIA_PROVIDER`       | AI provider (`pollinations` or `openai`)          | `pollinations`    |
+| `POLLINATIONS_API_KEY`    | Optional API key for Pollinations                 | `your_key`        |
+| `OPENAI_API_KEY`          | OpenAI API key (required if provider is `openai`) | `sk-...`          |
+| `MEDIA_STORAGE_PROVIDER`  | Storage engine (`supabase` or `local`)            | `supabase`        |
+| `SUPABASE_STORAGE_BUCKET` | Supabase Storage bucket name                      | `generated-media` |
+
+---
+
+### 4. Database Setup & Sequential Migrations
+
+You must execute the database scripts against your PostgreSQL / Supabase database. You can run them via the **Supabase Dashboard SQL Editor** or via the PostgreSQL CLI tool `psql`:
+
+#### Step 4.1: Execute Base Schema
+
+Execute the complete base schema located at the root of the repository:
+
+```bash
+psql -h <db-host> -U <db-user> -d <db-name> -f email_marketing_complete.sql
+```
+
+_(Or paste the entire content of `email_marketing_complete.sql` into the Supabase SQL Editor and run it)._
+
+#### Step 4.2: Execute Incremental Migrations in Sequence
+
+Run each migration script in chronological order from `src/scripts/sql/`:
 
 ```bash
 psql -f src/scripts/sql/20260330_add_template_designer_tables.sql
-```
-
-5. Run scheduler migration for scheduled campaign queue/lock:
-
-```bash
 psql -f src/scripts/sql/20260331_add_campaign_scheduler_queue.sql
-```
-
-6. Run role constraint migration:
-
-```bash
-psql -f src/scripts/sql/20260531_restrict_user_roles.sql
-6. Run individual email tracking migration:
-
-```bash
+psql -f src/scripts/sql/20260514_default_user_role.sql
+psql -f src/scripts/sql/20260524_add_template_owner.sql
 psql -f src/scripts/sql/20260527_add_individual_email_tracking.sql
-```
-
-7. Run auth OTP migration:
-
-```bash
+psql -f src/scripts/sql/20260531_restrict_user_roles.sql
 psql -f src/scripts/sql/20260601_add_auth_otp_codes.sql
+psql -f src/scripts/sql/20260601_allow_profile_email_change_otps.sql
+psql -f src/scripts/sql/20260602_allow_password_reset_otps.sql
 ```
 
-8. Start in development mode:
+---
+
+### 5. Initial Administrator Account Setup
+
+The initial database script includes a default user, but the password hash is a placeholder. You can set up your admin user using either of the following methods:
+
+#### Option A: Using the CLI Hash Script
+
+1. Run the hashing script with your desired password:
+   ```bash
+   npm run hash:password -- YourSecurePassword123
+   ```
+2. Copy the resulting bcrypt hash output (e.g., `$2a$10$...`).
+3. Update the admin user record in your database:
+   ```sql
+   UPDATE users
+   SET password = '<GENERATED_BCRYPT_HASH>', role = 'admin', is_active = TRUE
+   WHERE email = 'admin@example.com';
+   ```
+
+#### Option B: Registering via the API
+
+1. Call `POST /api/v1/auth/register` with your admin email and password.
+2. Verify the registration OTP via `POST /api/v1/auth/register/verify-otp`.
+3. In your database, elevate the user to admin:
+   ```sql
+   UPDATE users SET role = 'admin' WHERE email = 'your-email@example.com';
+   ```
+
+---
+
+### 6. Start the Server
+
+#### Development Mode (with auto-reload via Nodemon):
 
 ```bash
 npm run dev
 ```
 
-Server base URL: `http://localhost:5000/api/v1`
-
-Scheduler environment variables (optional):
-
-- `SCHEDULER_ENABLED=true`
-- `SCHEDULER_INTERVAL_MS=15000`
-- `SCHEDULER_BATCH_SIZE=50`
-- `SCHEDULER_LOCK_TTL_SECONDS=25`
-
-SMTP sending:
-
-- Real email sending now uses the SMTP settings stored in `email_accounts`.
-- Required fields for an active sending account: `email_address`, `smtp_host`, `smtp_port`, optional `smtp_username`, `smtp_password`, `use_tls`.
-- `POST /campaigns/:id/start` now sends real emails, stores rendered content per recipient, and records SMTP failures in `campaign_recipients.error_message` / `email_logs`.
-- `POST /email-accounts/:id/test` sends a test email using that account. Body supports `toEmail`, `subject`, `message`.
-
-Auth OTP:
-
-- `POST /auth/register` now sends a 6-digit OTP and does not create the account immediately.
-- `POST /auth/register/verify-otp` verifies the OTP, creates the account, and returns the JWT token.
-- `POST /auth/password/request-otp` verifies the current password, sends an OTP to the logged-in user's email, and stores the pending password hash.
-- `POST /auth/password/verify-otp` verifies the OTP and applies the pending password change.
-- Configure `OTP_EMAIL_FROM`, `OTP_SMTP_HOST`, `OTP_SMTP_PORT`, `OTP_SMTP_USERNAME`, `OTP_SMTP_PASSWORD`, and `OTP_SMTP_USE_TLS` to send OTP emails. In non-production mode, missing OTP SMTP logs the OTP to the backend console for local testing.
-- OTP codes expire after `OTP_EXPIRES_MINUTES` and are limited by `OTP_MAX_ATTEMPTS`.
-
-Email tracking:
-
-- Set `PUBLIC_BASE_URL` to the publicly reachable backend URL before sending campaigns. For real email delivery, use an HTTPS branded domain such as `https://track.example.com`, not localhost, raw IP, or temporary tunnel domains.
-- Set a private `TRACKING_SECRET` used to sign per-recipient tracking links.
-- `EMAIL_TRACKING_REQUIRE_HTTPS=true` prevents tracking URLs from being generated when `PUBLIC_BASE_URL` is not HTTPS.
-- `EMAIL_OPEN_TRACKING_ENABLED=false` disables the 1x1 open pixel by default. Set it to `true` only after your sending domain, tracking domain, SPF, DKIM, and DMARC are configured.
-- `EMAIL_CLICK_TRACKING_MODE=marked` only rewrites links that are explicitly marked with `data-track-click="true"` or `data-mail-track-click="true"`. Use `none` to disable click tracking, or `all` to rewrite every external link.
-- `EMAIL_APPEND_UNSUBSCRIBE_FOOTER=true` appends a visible unsubscribe footer when the template does not already include `{{unsubscribe_url}}`.
-- `{{unsubscribe_url}}` renders a confirmation-based unsubscribe link.
-- Public endpoints are `GET /tracking/open/:token.gif`, `GET /tracking/click/:token`, and `GET/POST /tracking/unsubscribe/:token`.
-- Individual emails sent after the tracking migration store delivered HTML snapshots and tracking activity.
-
-AI media generation for email:
-
-- `AI_MEDIA_PROVIDER` controls the provider. Use `pollinations` for Pollinations or `openai` for OpenAI.
-- For Pollinations, configure `POLLINATIONS_API_KEY` on the backend only if your account/API tier requires it.
-- For OpenAI, configure `OPENAI_API_KEY` on the backend only.
-- `MEDIA_STORAGE_PROVIDER=supabase` uploads generated files to Supabase Storage and returns a public Supabase URL.
-- `SUPABASE_STORAGE_BUCKET` controls the public bucket name. Default: `generated-media`.
-- `SUPABASE_STORAGE_FOLDER` controls the folder inside the bucket. Default: `generated`.
-- Use a Supabase service-role/secret key on the backend if you want the server to create the bucket automatically.
-- If `MEDIA_STORAGE_PROVIDER=local`, generated files are stored in `public/media/generated` and served from `/media/generated/...`.
-- With local storage, set `PUBLIC_BASE_URL` or `MEDIA_PUBLIC_BASE_URL` to a public URL before sending real emails, because email clients must be able to fetch the image/video thumbnail over the internet.
-- Use image URLs directly in email HTML.
-- For video, use a thumbnail or button that links to the stored MP4 or a landing page. Most email clients do not reliably play embedded video.
-
-## Important Note About Seed User
-
-The seed admin password in SQL is a placeholder hash. You can:
-
-- Register a new admin user via `POST /api/v1/auth/register`, or
-- Hash a password and update DB manually:
+#### Production Mode:
 
 ```bash
-node src/scripts/hashPassword.js your_password
+npm start
 ```
 
-Then update `users.password` with the generated hash.
+Once running, verify the server status:
 
-## API Overview
+- Base API Endpoint: `http://localhost:5000/api/v1`
+- Health Check: `http://localhost:5000/api/v1/health`
 
-- `GET /health`
-- `POST /auth/register`
-- `POST /auth/login`
-- `GET /auth/me`
-- `GET/POST/PATCH/DELETE /contacts`
-- `POST /contacts/import` (multipart file field: `file`, supports `.csv`/`.xlsx`)
-- `GET /contacts/export?format=csv|xlsx`
-- `GET/POST /contacts/fields`
-- `PATCH/DELETE /contacts/fields/:fieldId`
-- `GET/PUT /contacts/:id/fields`
-- `GET/POST /contacts/tags`
-- `PUT /contacts/:id/tags`
-- `GET/POST/PATCH/DELETE /templates`
-- `GET /templates/shared` (templates created by admins, available to all authenticated users)
-- `GET /templates/:id/designer`
-- `PUT /templates/:id/designer`
-- `POST /templates/:id/designer/publish`
-- `GET /templates/:id/designer/versions`
-- `GET /templates/:id/designer/versions/:versionId`
-- `POST /templates/:id/designer/versions/:versionId/restore`
+---
 
-Designer notes:
+## Available NPM Scripts
 
-- `layout` is the source of truth for drag-drop blocks/components.
-- Backend now auto-renders `renderedHtml` and `renderedText` from `layout` if these fields are omitted.
-- You can still send `renderedHtml` / `renderedText` explicitly to override auto-render output.
-- For Google-style marketing emails, use `columns`/`grid` with `featureCard` blocks. The renderer outputs email-client-friendly table HTML with inline styles and stacks columns on mobile.
+| Script                  | Command                            | Description                                             |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------- |
+| `npm run dev`           | `nodemon src/server.js`            | Starts server with automatic file watcher & reload      |
+| `npm start`             | `node src/server.js`               | Starts server in standard production mode               |
+| `npm run check`         | `node --check src/server.js`       | Validates JavaScript syntax without starting the server |
+| `npm run hash:password` | `node src/scripts/hashPassword.js` | Generates a bcrypt password hash for database seeding   |
+| `npm run lint`          | `eslint .`                         | Runs ESLint over all project files                      |
+| `npm run lint:fix`      | `eslint . --fix`                   | Automatically fixes autofixable ESLint issues           |
+| `npm run format`        | `prettier --write .`               | Formats all code, JSON, and Markdown files              |
+| `npm run format:check`  | `prettier --check .`               | Verifies whether all files comply with Prettier rules   |
+| `npm run prepare`       | `husky`                            | Initializes Husky git pre-commit hooks                  |
 
-Example designer layout:
+---
 
-```json
-{
-  "schemaVersion": 1,
-  "blocks": [
-    {
-      "type": "columns",
-      "props": { "columns": 2, "gap": 28 },
-      "children": [
-        {
-          "type": "featureCard",
-          "props": {
-            "imageUrl": "https://example.com/gemini.jpg",
-            "imageAlt": "Gemini app",
-            "title": "Gemini app",
-            "description": "Chat with Gemini, a personal AI assistant from Google.",
-            "linkLabel": "Try Gemini in Pro >",
-            "linkUrl": "https://example.com/gemini"
-          }
-        },
-        {
-          "type": "featureCard",
-          "props": {
-            "imageUrl": "https://example.com/flow.jpg",
-            "imageAlt": "Flow",
-            "title": "Flow",
-            "description": "Built with and for creatives, Flow is an AI filmmaking tool.",
-            "linkLabel": "Try Flow in Pro >",
-            "linkUrl": "https://example.com/flow"
-          }
-        }
-      ]
-    }
-  ]
-}
+## Campaign Dispatch & Background Scheduler
+
+1. **Asynchronous Dispatch**:
+   - Calling `POST /api/v1/campaigns/:id/start` validates campaign requirements, locks recipients, updates campaign status to `sending`, and immediately returns **`202 Accepted`**.
+2. **Worker Processing**:
+   - The background scheduler (`src/modules/campaigns/campaignScheduler.js`) runs every `SCHEDULER_INTERVAL_MS` (default: 15s).
+   - In each tick, the worker searches for `sending` campaigns and delegates batch dispatch to `campaignsService.processCampaignDispatch()`.
+   - The service fetches the next batch of recipients (`SCHEDULER_BATCH_SIZE`, default: 50), compiles personalized HTML for each contact, and transmits emails using the campaign's configured SMTP account pool (`mailService.js`).
+   - Delivery statuses and error details are recorded per recipient in `campaign_recipients`. Once all recipients are processed, the campaign status automatically transitions to `completed`.
+
+---
+
+## Email Tracking & Deliverability
+
+To enable deliverability tracking:
+
+1. **Tracking Domain**: Set `PUBLIC_BASE_URL` to your public backend URL. In production, use a branded HTTPS domain (e.g., `https://track.yourdomain.com`).
+2. **Open Tracking**: When `EMAIL_OPEN_TRACKING_ENABLED=true`, a transparent 1x1 GIF tracking pixel (`GET /api/v1/tracking/open/:token.gif`) is embedded into outgoing emails.
+3. **Click Tracking**:
+   - `EMAIL_CLICK_TRACKING_MODE=marked` (default): Rewrites only links with `data-track-click="true"` or `data-mail-track-click="true"` to route through `GET /api/v1/tracking/click/:token`.
+   - `EMAIL_CLICK_TRACKING_MODE=all`: Rewrites all external links in the email body.
+   - `EMAIL_CLICK_TRACKING_MODE=none`: Disables click tracking rewrites.
+4. **Unsubscribe Handling**:
+   - Outgoing emails include the `{{unsubscribe_url}}` merge tag pointing to `GET /api/v1/tracking/unsubscribe/:token`.
+   - If missing from the template, setting `EMAIL_APPEND_UNSUBSCRIBE_FOOTER=true` appends a compliant footer automatically.
+
+---
+
+## Visual Template Designer
+
+The template system supports visual drag-and-drop layouts:
+
+- The `layout` property contains the tree of blocks (e.g. `columns`, `featureCard`, `button`, `heading`, `text`, `divider`, `spacer`).
+- When saving a template (`PUT /api/v1/templates/:id/designer`), the backend compiler (`templateRenderer.js`) parses `layout` and generates clean, responsive HTML tables with inline CSS for cross-client compatibility.
+- You can query saved versions with `GET /api/v1/templates/:id/designer/versions` and restore prior versions via `POST /api/v1/templates/:id/designer/versions/:versionId/restore`.
+
+---
+
+## AI Media Generation
+
+Generate visual assets directly into your email templates:
+
+- **Image Generation**: `POST /api/v1/ai-media/images` accepts a prompt, dimensions, and email width, returning an asset URL and responsive HTML snippet ready to insert into templates.
+- **Video Generation**: `POST /api/v1/ai-media/videos` generates short promotional clips. Because email clients do not natively stream video, the API generates a thumbnail button linking directly to the hosted MP4.
+
+---
+
+## API Endpoints Reference
+
+All endpoints are prefixed with `/api/v1`. Protected endpoints require header `Authorization: Bearer <token>`.
+
+### Authentication & Account (`/auth`)
+
+- `POST /auth/register` — Submit email/password; sends 6-digit verification OTP.
+- `POST /auth/register/verify-otp` — Verify registration OTP and activate account.
+- `POST /auth/login` — Login with email and password; returns JWT token.
+- `GET /auth/me` — Retrieve profile info of currently logged-in user.
+- `POST /auth/password/request-otp` — Request OTP to change account password.
+- `POST /auth/password/verify-otp` — Verify OTP and update account password.
+
+### Contacts & Segmentation (`/contacts`)
+
+- `GET /contacts` — List contacts (supports pagination, search, tag filters).
+- `POST /contacts` — Create a new contact.
+- `GET/PATCH/DELETE /contacts/:id` — Read, update, or delete a contact.
+- `POST /contacts/import` — Bulk import contacts via CSV or Excel (`multipart/form-data`, field: `file`).
+- `GET /contacts/export` — Export contacts as `?format=csv` or `?format=xlsx`.
+- `GET/POST /contacts/tags` — List or create tags.
+- `PUT /contacts/:id/tags` — Associate tags with a contact.
+- `GET/POST /contacts/fields` — List or define custom dynamic contact fields.
+- `PATCH/DELETE /contacts/fields/:fieldId` — Update or delete custom field definitions.
+- `GET/PUT /contacts/:id/fields` — Read or update custom field values for a contact.
+
+### SMTP Email Accounts (`/email-accounts`)
+
+- `GET /email-accounts` — List configured SMTP accounts (passwords sanitized).
+- `POST /email-accounts` — Add a new SMTP sending account.
+- `PATCH/DELETE /email-accounts/:id` — Update or remove an SMTP account.
+- `POST /email-accounts/:id/default` — Mark an account as primary default sender.
+- `POST /email-accounts/:id/test` — Send a live test email to verify SMTP configuration.
+
+### Email Templates & Designer (`/templates`)
+
+- `GET /templates` — List user's templates.
+- `POST /templates` — Create a new email template.
+- `GET/PATCH/DELETE /templates/:id` — Read, update, or remove a template.
+- `GET /templates/shared` — View admin-created global templates.
+- `GET /templates/:id/designer` — Fetch visual designer block layout.
+- `PUT /templates/:id/designer` — Save designer layout (auto-compiles responsive HTML).
+- `POST /templates/:id/designer/publish` — Publish designer draft to live template.
+- `GET /templates/:id/designer/versions` — View version history of a template.
+- `POST /templates/:id/designer/versions/:versionId/restore` — Revert to an earlier layout version.
+
+### Campaigns (`/campaigns`)
+
+- `GET /campaigns` — List marketing campaigns.
+- `POST /campaigns` — Create a new campaign.
+- `GET/PATCH/DELETE /campaigns/:id` — Read, update, or delete campaign.
+- `GET /campaigns/:id/recipients` — View recipient list with delivery and engagement status.
+- `GET /campaigns/:id/recipients/:recipientId` — View sent HTML snapshot & tracking events.
+- `POST /campaigns/:id/start` — Enqueue campaign dispatch (returns `202 Accepted`).
+- `POST /campaigns/:id/pause` — Pause an ongoing campaign dispatch.
+
+### Individual Transactional Emails (`/individual-emails`)
+
+- `GET /individual-emails` — List individual sent emails.
+- `GET /individual-emails/:id` — Read email detail, HTML snapshot, and tracking status.
+- `POST /individual-emails/preview` — Preview rendered HTML with dynamic contact tags.
+- `POST /individual-emails/send` — Send a single personalized email immediately.
+
+### Analytics & Overview (`/dashboard`)
+
+- `GET /dashboard/overview` — Aggregated delivery rates, open rates, and click metrics.
+
+### Tracking Endpoints (`/tracking`)
+
+- `GET /tracking/open/:token.gif` — 1x1 transparent GIF tracking pixel.
+- `GET /tracking/click/:token` — Click-through tracking redirect.
+- `GET/POST /tracking/unsubscribe/:token` — Unsubscribe landing page and confirmation.
+
+### AI Media Creation (`/ai-media`)
+
+- `POST /ai-media/images` — Generate an image from a prompt for email campaigns.
+- `POST /ai-media/videos` — Generate a short video from a prompt.
+- `GET /ai-media/videos/:videoId` — Poll video generation status.
+- `POST /ai-media/videos/:videoId/download` — Download video to storage bucket.
+- `POST /ai-media/video-email-snippet` — Generate responsive email video card HTML.
+
+### Admin Controls (`/admin` — Admin role only)
+
+- `GET /admin/overview` — System-wide platform metrics.
+- `GET /admin/users` — List all registered users.
+- `GET /admin/users/:id` — View detailed user profile and stats.
+- `PATCH /admin/users/:id/role` — Promote/demote user role (`user` / `admin`).
+- `PATCH /admin/users/:id/status` — Activate or suspend a user account.
+- `DELETE /admin/templates/:id` — Force delete a template across the system.
+- `POST /admin/campaigns/:id/pause` — Force pause any active campaign.
+- `DELETE /admin/campaigns/:id` — Force delete any campaign.
+
+---
+
+## Code Quality & Git Hooks
+
+This repository enforces strict code style, formatting, and linting standards:
+
+- **ESLint**: Standardized using the ESLint v9 Flat Config format in `eslint.config.js`.
+- **Prettier**: Enforces consistent code formatting defined in `.prettierrc`.
+- **Husky & lint-staged**: Automatically executes `eslint --fix` and `prettier --write` on staged files on every `git commit`.
+
+To verify your changes locally before committing:
+
+```bash
+# Check code syntax
+npm run check
+
+# Check for lint errors
+npm run lint
+
+# Check formatting
+npm run format:check
 ```
-- `GET/POST/PATCH/DELETE /email-accounts`
-- `POST /email-accounts/:id/default`
-- `POST /email-accounts/:id/test`
-- `GET /individual-emails`
-- `GET /individual-emails/:id` (sent HTML snapshot and tracking events)
-- `POST /individual-emails/send`
-- `POST /individual-emails/preview`
-- `GET/POST /campaigns`
-- `GET /campaigns/:id`
-- `GET /campaigns/:id/recipients`
-- `GET /campaigns/:id/recipients/:recipientId` (sent HTML snapshot and tracking events)
-- `POST /campaigns/:id/start`
-- `POST /campaigns/:id/pause`
-- `GET /dashboard/overview`
-- `POST /ai-media/images`
-- `POST /ai-media/videos`
-- `GET /ai-media/videos/:videoId`
-- `POST /ai-media/videos/:videoId/download`
-- `POST /ai-media/video-email-snippet`
-- `GET /admin/overview` (admin only)
-- `GET /admin/users` (admin only)
-- `GET /admin/users/:id` (admin only)
-- `PATCH /admin/users/:id/role` (admin only)
-- `PATCH /admin/users/:id/status` (admin only)
-- `DELETE /admin/templates/:id` (admin only)
-- `POST /admin/campaigns/:id/pause` (admin only)
-- `DELETE /admin/campaigns/:id` (admin only)
 
-Role-aware read routes:
+---
 
-- `user` sees only their own contacts, tags, fields, email accounts, templates, campaigns, and dashboard data.
-- `user` can also read admin-created shared templates through `GET /templates/shared`, and can read a shared template detail with `GET /templates/:id`.
-- `admin` sees system-wide data on the same read routes, for example `GET /contacts`, `GET /email-accounts`, `GET /templates`, `GET /campaigns`, and `GET /dashboard/overview`.
-- `GET /email-accounts` never exposes stored SMTP passwords.
-- Admin read routes that support owner filtering accept `userId`, for example `GET /contacts?userId=5`, `GET /email-accounts?userId=5`, `GET /templates?userId=5`, and `GET /campaigns?userId=5`.
-- Admin management actions stay under `/admin/*`, such as role changes, user deactivation, deleting templates, pausing campaigns, and deleting campaigns.
+## License
 
-AI media examples:
-
-Provider env example:
-
-```env
-PUBLIC_BASE_URL=https://api.example.com
-TRACKING_SECRET=change_me_for_public_email_tracking
-AI_MEDIA_PROVIDER=pollinations
-POLLINATIONS_API_KEY=your_pollinations_api_key
-POLLINATIONS_BASE_URL=https://gen.pollinations.ai
-POLLINATIONS_IMAGE_MODEL=flux
-POLLINATIONS_VIDEO_MODEL=
-```
-
-```http
-POST /api/v1/ai-media/images
-Authorization: Bearer <jwt_token>
-Content-Type: application/json
-
-{
-  "prompt": "Banner email khuyến mãi cà phê Việt Nam, phong cách cao cấp, nền sáng",
-  "altText": "Khuyến mãi cà phê",
-  "size": "1536x1024",
-  "emailWidth": 600
-}
-```
-
-The response includes `url` and `emailHtml`, which can be saved into a template image/html block.
-
-```http
-POST /api/v1/ai-media/videos
-Authorization: Bearer <jwt_token>
-Content-Type: application/json
-
-{
-  "prompt": "Video 8 giây giới thiệu sản phẩm cà phê rang xay, ánh sáng tự nhiên",
-  "size": "1280x720",
-  "seconds": 8
-}
-```
-
-For OpenAI, poll `GET /api/v1/ai-media/videos/:videoId`, then call `POST /api/v1/ai-media/videos/:videoId/download` after the status is `completed`.
-For Pollinations, the backend downloads and stores the MP4 during `POST /api/v1/ai-media/videos`, so the response can already include `status: "completed"`, `url`, and `emailHtml`.
-
-## Authentication
-
-Protected routes use Bearer token:
-
-```http
-Authorization: Bearer <jwt_token>
-```
-
-Roles are `user` and `admin`. Read routes are role-aware: `user` gets their own
-data, while `admin` gets system-wide data and can filter by `userId` where
-supported. Cross-user management actions are available only under `/admin/*`.
+This project is licensed under the [ISC License](LICENSE).

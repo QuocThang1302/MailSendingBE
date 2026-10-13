@@ -146,27 +146,34 @@ const unsubscribe = async (recipientId, metadata) => {
   }
 
   const { recipient, campaign } = context;
-  const normalizedEmail = String(recipient.email || "").trim().toLowerCase();
+  const normalizedEmail = String(recipient.email || "")
+    .trim()
+    .toLowerCase();
   const firstUnsubscribe = recipient.status !== "unsubscribed";
 
-  const { error: unsubscribeError } = await supabase.from("unsubscribes").upsert(
-    {
-      user_id: campaign.user_id,
-      contact_id: recipient.contact_id || null,
-      email: normalizedEmail,
-      reason: "user_request",
-      campaign_id: campaign.id,
-      ip_address: metadata.ipAddress || null,
-      unsubscribed_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,email" },
-  );
+  const { error: unsubscribeError } = await supabase
+    .from("unsubscribes")
+    .upsert(
+      {
+        user_id: campaign.user_id,
+        contact_id: recipient.contact_id || null,
+        email: normalizedEmail,
+        reason: "user_request",
+        campaign_id: campaign.id,
+        ip_address: metadata.ipAddress || null,
+        unsubscribed_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,email" },
+    );
   throwIfError(unsubscribeError);
 
   if (recipient.contact_id) {
     const { error: contactError } = await supabase
       .from("email_contacts")
-      .update({ email_status: "unsubscribed", updated_at: new Date().toISOString() })
+      .update({
+        email_status: "unsubscribed",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", recipient.contact_id)
       .eq("user_id", campaign.user_id);
     throwIfError(contactError);
@@ -216,7 +223,11 @@ const recordIndividualOpen = async (individualEmailId, metadata) => {
   return true;
 };
 
-const recordIndividualClick = async (individualEmailId, clickedUrl, metadata) => {
+const recordIndividualClick = async (
+  individualEmailId,
+  clickedUrl,
+  metadata,
+) => {
   const email = await findIndividualEmailContext(individualEmailId);
   if (!email) {
     return false;
@@ -249,25 +260,32 @@ const unsubscribeIndividual = async (individualEmailId, metadata) => {
   }
 
   const firstUnsubscribe = email.status !== "unsubscribed";
-  const normalizedEmail = String(email.email || "").trim().toLowerCase();
-  const { error: unsubscribeError } = await supabase.from("unsubscribes").upsert(
-    {
-      user_id: email.user_id,
-      contact_id: email.contact_id || null,
-      email: normalizedEmail,
-      reason: "user_request",
-      campaign_id: null,
-      ip_address: metadata.ipAddress || null,
-      unsubscribed_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,email" },
-  );
+  const normalizedEmail = String(email.email || "")
+    .trim()
+    .toLowerCase();
+  const { error: unsubscribeError } = await supabase
+    .from("unsubscribes")
+    .upsert(
+      {
+        user_id: email.user_id,
+        contact_id: email.contact_id || null,
+        email: normalizedEmail,
+        reason: "user_request",
+        campaign_id: null,
+        ip_address: metadata.ipAddress || null,
+        unsubscribed_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,email" },
+    );
   throwIfError(unsubscribeError);
 
   if (email.contact_id) {
     const { error: contactError } = await supabase
       .from("email_contacts")
-      .update({ email_status: "unsubscribed", updated_at: new Date().toISOString() })
+      .update({
+        email_status: "unsubscribed",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", email.contact_id)
       .eq("user_id", email.user_id);
     throwIfError(contactError);

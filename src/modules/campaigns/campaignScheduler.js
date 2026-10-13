@@ -1,5 +1,6 @@
 const env = require("../../config/env");
 const campaignsRepository = require("./campaigns.repository");
+const campaignsService = require("./campaigns.service");
 
 const SCHEDULER_LOCK_KEY = "campaign-scheduler-scan";
 const DISPATCH_LOCK_KEY = "campaign-dispatch-worker";
@@ -81,10 +82,7 @@ const runDispatchCycle = async (workerId) => {
       }
 
       try {
-        await campaignsRepository.startCampaign(
-          claimed.user_id,
-          claimed.campaign_id,
-        );
+        await campaignsService.processCampaignDispatch(claimed);
         await campaignsRepository.markDispatchQueueCompleted(claimed.id);
         processed += 1;
       } catch (error) {

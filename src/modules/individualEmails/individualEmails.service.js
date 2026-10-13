@@ -1,5 +1,5 @@
 const XLSX = require("xlsx");
-const nodemailer = require("nodemailer");
+const mailService = require("../../common/mailService");
 
 const ApiError = require("../../common/ApiError");
 const individualEmailsRepository = require("./individualEmails.repository");
@@ -11,7 +11,10 @@ const {
   rewriteTrackedLinks,
 } = require("../tracking/emailDelivery");
 
-const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizeEmail = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TRACKING_MIGRATION_FILE =
   "src/scripts/sql/20260527_add_individual_email_tracking.sql";
@@ -76,20 +79,8 @@ const buildSmtpErrorDetails = (account, reason) => ({
   reason,
 });
 
-const normalizeSmtpErrorMessage = (error) => {
-  const message =
-    error instanceof Error ? error.message : "Unknown SMTP error";
-
-  if (/Invalid login|Username and Password not accepted|EAUTH/i.test(message)) {
-    return `${message}. For Gmail, use a Google App Password, not your normal Gmail password.`;
-  }
-
-  if (/ETIMEDOUT|Connection timeout|Greeting never received|ESOCKET/i.test(message)) {
-    return `${message}. Check SMTP host/port and firewall. Gmail should use smtp.gmail.com with port 587 TLS or 465 SSL.`;
-  }
-
-  return message;
-};
+const normalizeSmtpErrorMessage = (error) =>
+  mailService.normalizeSmtpErrorMessage(error);
 
 const validateSmtpAccountConfig = (account) => {
   const port = Number(account.smtp_port || 0);
@@ -155,12 +146,15 @@ const buildMergeContext = (contact, email, additionalContext = {}) => {
 };
 
 const applyMergeTags = (template, context) =>
-  String(template || "").replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key) => {
-    if (Object.prototype.hasOwnProperty.call(context, key)) {
-      return String(context[key] ?? "");
-    }
-    return "";
-  });
+  String(template || "").replace(
+    /{{\s*([a-zA-Z0-9_]+)\s*}}/g,
+    (_match, key) => {
+      if (Object.prototype.hasOwnProperty.call(context, key)) {
+        return String(context[key] ?? "");
+      }
+      return "";
+    },
+  );
 
 const clampQrSize = (value) => {
   const size = Number.parseInt(value, 10);
@@ -184,17 +178,20 @@ const readAttr = (tag, name) => {
 };
 
 const resolveQrImages = (html) =>
-  String(html || "").replace(/<img\b[^>]*data-mail-qr="true"[^>]*>/gi, (tag) => {
-    const rawValue = decodeHtml(readAttr(tag, "data-qr-value"));
-    const size = clampQrSize(readAttr(tag, "data-qr-size"));
-    const src = buildQrImageUrl(rawValue, size);
+  String(html || "").replace(
+    /<img\b[^>]*data-mail-qr="true"[^>]*>/gi,
+    (tag) => {
+      const rawValue = decodeHtml(readAttr(tag, "data-qr-value"));
+      const size = clampQrSize(readAttr(tag, "data-qr-size"));
+      const src = buildQrImageUrl(rawValue, size);
 
-    return tag
-      .replace(/src="[^"]*"/i, `src="${src}"`)
-      .replace(/\sdata-mail-qr="true"/i, "")
-      .replace(/\sdata-qr-value="[^"]*"/i, "")
-      .replace(/\sdata-qr-size="[^"]*"/i, "");
-  });
+      return tag
+        .replace(/src="[^"]*"/i, `src="${src}"`)
+        .replace(/\sdata-mail-qr="true"/i, "")
+        .replace(/\sdata-qr-value="[^"]*"/i, "")
+        .replace(/\sdata-qr-size="[^"]*"/i, "");
+    },
+  );
 
 const getColumnValue = (row, keys) => {
   for (const key of keys) {
@@ -243,24 +240,7 @@ const parseRecipientsFromFile = (file) => {
   );
 };
 
-const buildTransport = (account) => {
-  const port = Number(account.smtp_port || 0) || 587;
-  const secure = port === 465;
-
-  return nodemailer.createTransport({
-    host: account.smtp_host,
-    port,
-    secure,
-    requireTLS: account.use_tls === true && !secure,
-    auth: {
-      user: account.smtp_username,
-      pass: account.smtp_password,
-    },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 30000,
-  });
-};
+const buildTransport = (account) => mailService.getTransporter(account);
 
 const ensureSendingAccount = async (userId, emailAccountId) => {
   const account = await individualEmailsRepository.getSendingAccount(
@@ -303,12 +283,16 @@ const ensureDailyLimit = (account, requestedCount) => {
   }
 
   if (sentToday + requestedCount > dailyLimit) {
-    throw new ApiError(409, "Daily sending limit exceeded for this email account", {
-      dailyLimit,
-      sentToday,
-      requestedCount,
-      remaining: Math.max(0, dailyLimit - sentToday),
-    });
+    throw new ApiError(
+      409,
+      "Daily sending limit exceeded for this email account",
+      {
+        dailyLimit,
+        sentToday,
+        requestedCount,
+        remaining: Math.max(0, dailyLimit - sentToday),
+      },
+    );
   }
 };
 
@@ -316,7 +300,9 @@ const buildContactsMap = (rows) =>
   new Map(rows.map((row) => [normalizeEmail(row.email), row]));
 
 const parseRecipients = (recipients) => {
-  const normalized = [...new Set((recipients || []).map(normalizeEmail).filter(Boolean))];
+  const normalized = [
+    ...new Set((recipients || []).map(normalizeEmail).filter(Boolean)),
+  ];
   if (normalized.length === 0) {
     throw new ApiError(400, "At least one recipient is required");
   }
@@ -369,14 +355,17 @@ const sendBatch = async (userId, payload, mode) => {
     let unsubscribeUrl = null;
 
     if (mode === "send") {
-      emailRecord = await individualEmailsRepository.createIndividualEmail(userId, {
-        contactId: contact?.id || null,
-        email,
-        emailAccountId: account.id,
-        subject: renderedSubject,
-        contentHtml: renderedHtml,
-        contentText: renderedText,
-      });
+      emailRecord = await individualEmailsRepository.createIndividualEmail(
+        userId,
+        {
+          contactId: contact?.id || null,
+          email,
+          emailAccountId: account.id,
+          subject: renderedSubject,
+          contentHtml: renderedHtml,
+          contentText: renderedText,
+        },
+      );
       unsubscribeUrl = buildIndividualTrackingUrl(
         "unsubscribe",
         emailRecord.id,
@@ -535,10 +524,13 @@ const listEmails = async (userId, query) => {
   try {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
-    const result = await individualEmailsRepository.listIndividualEmails(userId, {
-      page,
-      pageSize,
-    });
+    const result = await individualEmailsRepository.listIndividualEmails(
+      userId,
+      {
+        page,
+        pageSize,
+      },
+    );
 
     return {
       items: result.rows,

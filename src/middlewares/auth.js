@@ -1,8 +1,8 @@
 const jwt = require("jsonwebtoken");
 const ApiError = require("../common/ApiError");
 const env = require("../config/env");
-const { supabase } = require("../config/supabase");
 const { normalizeRole } = require("../common/roles");
+const authRepository = require("../modules/auth/auth.repository");
 
 const auth = async (req, _res, next) => {
   const header = req.headers.authorization || "";
@@ -26,15 +26,7 @@ const auth = async (req, _res, next) => {
   }
 
   try {
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("id, name, email, role, is_active")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (error) {
-      return next(error);
-    }
+    const user = await authRepository.findUserById(userId);
 
     if (!user) {
       return next(new ApiError(401, "Unauthorized"));

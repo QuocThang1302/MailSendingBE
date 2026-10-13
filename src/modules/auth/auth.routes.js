@@ -15,7 +15,10 @@ const registerSchema = z.object({
 
 const registerVerifySchema = z.object({
   email: z.string().email().max(150),
-  otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits"),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "OTP must be 6 digits"),
 });
 
 const loginSchema = z.object({
@@ -29,7 +32,10 @@ const passwordChangeRequestSchema = z.object({
 });
 
 const passwordChangeVerifySchema = z.object({
-  otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits"),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "OTP must be 6 digits"),
 });
 
 const passwordResetRequestSchema = z.object({
@@ -38,7 +44,10 @@ const passwordResetRequestSchema = z.object({
 
 const passwordResetVerifySchema = z.object({
   email: z.string().email().max(150),
-  otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits"),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "OTP must be 6 digits"),
   newPassword: z.string().min(8).max(72),
 });
 
@@ -49,7 +58,10 @@ const profileUpdateSchema = z.object({
 
 const profileEmailVerifySchema = z.object({
   email: z.string().email().max(150),
-  otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits"),
+  otp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "OTP must be 6 digits"),
 });
 
 router.post(

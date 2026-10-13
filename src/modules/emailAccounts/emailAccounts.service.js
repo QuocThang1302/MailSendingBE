@@ -1,6 +1,6 @@
 const ApiError = require("../../common/ApiError");
-const nodemailer = require("nodemailer");
 const { isAdmin } = require("../../common/roles");
+const mailService = require("../../common/mailService");
 const emailAccountsRepository = require("./emailAccounts.repository");
 
 const listEmailAccounts = async (actor, query = {}) => {
@@ -92,7 +92,7 @@ const testSmtpConnection = async (userId, payload) => {
     useTls:
       payload.useTls !== undefined
         ? payload.useTls
-        : storedAccount?.use_tls ?? true,
+        : (storedAccount?.use_tls ?? true),
   };
 
   if (!account.smtpHost || !account.smtpPort || !account.smtpUsername) {
@@ -103,30 +103,17 @@ const testSmtpConnection = async (userId, payload) => {
     throw new ApiError(400, "SMTP password is required");
   }
 
-  const port = Number(account.smtpPort);
-  const secure = port === 465;
-
-  const transporter = nodemailer.createTransport({
-    host: account.smtpHost,
-    port,
-    secure,
-    requireTLS: account.useTls === true && !secure,
-    auth: {
-      user: account.smtpUsername,
-      pass: account.smtpPassword,
-    },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 30000,
-  });
-
   try {
-    await transporter.verify();
+    await mailService.verifyConnection(account);
   } catch (error) {
+    const reason = mailService.normalizeSmtpErrorMessage(error);
     throw new ApiError(502, "SMTP connection failed", {
-      reason: error instanceof Error ? error.message : "Unknown SMTP error",
+      reason,
     });
   }
+
+  const port = Number(account.smtpPort);
+  const secure = port === 465;
 
   return {
     ok: true,

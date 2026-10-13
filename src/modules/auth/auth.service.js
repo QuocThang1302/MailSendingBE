@@ -41,7 +41,10 @@ const signToken = (user) => {
   );
 };
 
-const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizeEmail = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 
 const createOtpCode = () =>
   crypto.randomInt(100000, 1000000).toString().padStart(6, "0");
@@ -113,7 +116,10 @@ const assertOtp = async ({ email, purpose, code, userId = null }) => {
 
   if (Number(record.attempt_count || 0) >= env.otpMaxAttempts) {
     await authOtpRepository.consumeOtp(record.id);
-    throw new ApiError(429, "Too many OTP attempts. Please request a new code.");
+    throw new ApiError(
+      429,
+      "Too many OTP attempts. Please request a new code.",
+    );
   }
 
   if (!verifyOtpCode(record, code)) {

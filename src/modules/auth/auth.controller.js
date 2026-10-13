@@ -23,7 +23,10 @@ const me = asyncHandler(async (req, res) => {
 });
 
 const requestPasswordChangeOtp = asyncHandler(async (req, res) => {
-  const data = await authService.requestPasswordChangeOtp(req.user.id, req.body);
+  const data = await authService.requestPasswordChangeOtp(
+    req.user.id,
+    req.body,
+  );
   return sendOk(res, data, "Password change OTP sent");
 });
 

@@ -7,12 +7,7 @@ const aiMediaController = require("./aiMedia.controller");
 
 const router = Router();
 
-const imageSizeSchema = z.enum([
-  "1024x1024",
-  "1024x1536",
-  "1536x1024",
-  "auto",
-]);
+const imageSizeSchema = z.enum(["1024x1024", "1024x1536", "1536x1024", "auto"]);
 
 const videoSizeSchema = z.enum([
   "720x1280",

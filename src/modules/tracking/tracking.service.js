@@ -2,10 +2,21 @@ const ApiError = require("../../common/ApiError");
 const trackingRepository = require("./tracking.repository");
 const { verifyTrackingToken } = require("./trackingToken");
 
-const getMetadata = (req) => ({
-  ipAddress: req.ip || null,
-  userAgent: req.get("user-agent") || null,
-});
+const normalizeMetadata = (metadataOrReq) => {
+  if (!metadataOrReq) {
+    return { ipAddress: null, userAgent: null };
+  }
+  if (typeof metadataOrReq.get === "function") {
+    return {
+      ipAddress: metadataOrReq.ip || null,
+      userAgent: metadataOrReq.get("user-agent") || null,
+    };
+  }
+  return {
+    ipAddress: metadataOrReq.ipAddress || null,
+    userAgent: metadataOrReq.userAgent || null,
+  };
+};
 
 const decode = (token, action) => {
   try {
@@ -15,34 +26,36 @@ const decode = (token, action) => {
   }
 };
 
-const recordOpen = async (token, req) => {
+const recordOpen = async (token, metadata) => {
   const payload = decode(token, "open");
+  const meta = normalizeMetadata(metadata);
   if (payload.individualEmailId) {
     await trackingRepository.recordIndividualOpen(
       payload.individualEmailId,
-      getMetadata(req),
+      meta,
     );
     return;
   }
-  await trackingRepository.recordOpen(payload.recipientId, getMetadata(req));
+  await trackingRepository.recordOpen(payload.recipientId, meta);
 };
 
-const getClickDestination = async (token, req) => {
+const getClickDestination = async (token, metadata) => {
   const payload = decode(token, "click");
   if (!payload.url || !/^https?:\/\//i.test(payload.url)) {
     throw new ApiError(404, "Tracking link not found");
   }
 
+  const meta = normalizeMetadata(metadata);
   const found = payload.individualEmailId
     ? await trackingRepository.recordIndividualClick(
         payload.individualEmailId,
         payload.url,
-        getMetadata(req),
+        meta,
       )
     : await trackingRepository.recordClick(
         payload.recipientId,
         payload.url,
-        getMetadata(req),
+        meta,
       );
   if (!found) {
     throw new ApiError(404, "Tracking link not found");
@@ -54,7 +67,9 @@ const getClickDestination = async (token, req) => {
 const getUnsubscribeContext = async (token) => {
   const payload = decode(token, "unsubscribe");
   const context = payload.individualEmailId
-    ? await trackingRepository.findIndividualEmailContext(payload.individualEmailId)
+    ? await trackingRepository.findIndividualEmailContext(
+        payload.individualEmailId,
+      )
     : await trackingRepository.findRecipientContext(payload.recipientId);
   if (!context) {
     throw new ApiError(404, "Unsubscribe link not found");
@@ -67,14 +82,15 @@ const getUnsubscribeContext = async (token) => {
   };
 };
 
-const unsubscribe = async (token, req) => {
+const unsubscribe = async (token, metadata) => {
   const payload = decode(token, "unsubscribe");
+  const meta = normalizeMetadata(metadata);
   const found = payload.individualEmailId
     ? await trackingRepository.unsubscribeIndividual(
         payload.individualEmailId,
-        getMetadata(req),
+        meta,
       )
-    : await trackingRepository.unsubscribe(payload.recipientId, getMetadata(req));
+    : await trackingRepository.unsubscribe(payload.recipientId, meta);
   if (!found) {
     throw new ApiError(404, "Unsubscribe link not found");
   }

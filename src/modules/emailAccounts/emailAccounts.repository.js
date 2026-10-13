@@ -53,9 +53,7 @@ const listEmailAccounts = async (userId, { status } = {}) => {
 };
 
 const listAllEmailAccounts = async ({ userId, status }) => {
-  let builder = supabase
-    .from("email_accounts")
-    .select(ACCOUNT_COLUMNS);
+  let builder = supabase.from("email_accounts").select(ACCOUNT_COLUMNS);
 
   if (userId) {
     builder = builder.eq("user_id", userId);

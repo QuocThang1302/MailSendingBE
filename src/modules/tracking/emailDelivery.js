@@ -57,7 +57,10 @@ const rewriteTrackedLinks = ({
       const cleanAfterHref = stripClickTrackingMarkers(afterHref);
       const targetUrl = decodeHref(rawUrl).trim();
 
-      if (!shouldTrackClick(attrs) || !isTrackableUrl(targetUrl, unsubscribeUrl)) {
+      if (
+        !shouldTrackClick(attrs) ||
+        !isTrackableUrl(targetUrl, unsubscribeUrl)
+      ) {
         return `<a${cleanBeforeHref} href=${quote}${rawUrl}${quote}${cleanAfterHref}>`;
       }
 

@@ -183,7 +183,9 @@ const listContactsByScope = async ({
 
   return {
     total: count || 0,
-    rows: includeOwners ? await decorateOwnerRows(decoratedRows) : decoratedRows,
+    rows: includeOwners
+      ? await decorateOwnerRows(decoratedRows)
+      : decoratedRows,
   };
 };
 
@@ -287,9 +289,7 @@ const listContactsForExportByScope = async (
   scopeUserId,
   { search, status, city },
 ) => {
-  let builder = supabase
-    .from("email_contacts")
-    .select(CONTACT_COLUMNS);
+  let builder = supabase.from("email_contacts").select(CONTACT_COLUMNS);
 
   if (scopeUserId) {
     builder = builder.eq("user_id", scopeUserId);

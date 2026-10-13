@@ -3,7 +3,7 @@ const escapeHtml = (value) => {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 };
 
@@ -91,7 +91,11 @@ const renderBlock = (block) => {
 
   if (type === "section" || type === "container") {
     const padding = toSafeNumber(props.padding, 8, 0, 80);
-    const background = readColor(props, ["background", "backgroundColor"], "transparent");
+    const background = readColor(
+      props,
+      ["background", "backgroundColor"],
+      "transparent",
+    );
     const align = escapeAttribute(readText(props, ["align"], "left"));
     return [
       `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${background};">`,
@@ -222,8 +226,12 @@ const renderBlock = (block) => {
   }
 
   if (type === "featurecard" || type === "feature-card") {
-    const imageUrl = escapeAttribute(readText(props, ["imageUrl", "image", "src", "url"]));
-    const imageAlt = escapeAttribute(readText(props, ["imageAlt", "alt", "title"], ""));
+    const imageUrl = escapeAttribute(
+      readText(props, ["imageUrl", "image", "src", "url"]),
+    );
+    const imageAlt = escapeAttribute(
+      readText(props, ["imageAlt", "alt", "title"], ""),
+    );
     const title = escapeHtml(readText(props, ["title", "heading"], ""));
     const description = escapeHtml(
       readText(props, ["description", "body", "text", "content"], ""),
@@ -234,7 +242,12 @@ const renderBlock = (block) => {
     const linkUrl = escapeAttribute(
       normalizeUrl(readText(props, ["linkUrl", "href", "ctaUrl"], "#")),
     );
-    const imageRadius = toSafeNumber(props.imageRadius ?? props.radius, 18, 0, 32);
+    const imageRadius = toSafeNumber(
+      props.imageRadius ?? props.radius,
+      18,
+      0,
+      32,
+    );
     const imageHtml = imageUrl
       ? `<img src="${imageUrl}" width="100%" alt="${imageAlt}" style="display:block;width:100%;height:auto;border:0;border-radius:${imageRadius}px;margin:0 0 24px;" />`
       : "";

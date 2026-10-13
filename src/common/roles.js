@@ -6,7 +6,9 @@ const ROLES = Object.freeze({
 const ROLE_VALUES = Object.freeze(Object.values(ROLES));
 
 const normalizeRole = (role) => {
-  const normalized = String(role || "").trim().toLowerCase();
+  const normalized = String(role || "")
+    .trim()
+    .toLowerCase();
   return ROLE_VALUES.includes(normalized) ? normalized : ROLES.USER;
 };
 

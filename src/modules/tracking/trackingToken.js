@@ -46,18 +46,19 @@ const verifyTrackingToken = (token, expectedAction) => {
   let payload;
   try {
     payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString());
-  } catch (_error) {
-    throw new Error("INVALID_TRACKING_TOKEN");
+  } catch (error) {
+    throw new Error("INVALID_TRACKING_TOKEN", { cause: error });
   }
 
   const isCampaignRecipient =
     Number.isInteger(payload.recipientId) && payload.recipientId > 0;
   const isIndividualEmail =
-    Number.isInteger(payload.individualEmailId) && payload.individualEmailId > 0;
+    Number.isInteger(payload.individualEmailId) &&
+    payload.individualEmailId > 0;
 
   if (
     payload.action !== expectedAction ||
-    (isCampaignRecipient === isIndividualEmail)
+    isCampaignRecipient === isIndividualEmail
   ) {
     throw new Error("INVALID_TRACKING_TOKEN");
   }
